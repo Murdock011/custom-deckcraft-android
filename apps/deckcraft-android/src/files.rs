@@ -18,6 +18,11 @@ use std::sync::{Mutex, OnceLock};
 /// The app's private files folder, set at start-up. Cache files for Kotlin to copy live here.
 pub static DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// The folder of the engine's AutoRecover entries, inside the app's private files.
+pub fn recovery_dir() -> Option<PathBuf> {
+    DIR.get().map(|d| d.join("recovery"))
+}
+
 /// Set when DeckCraft asks for a document; `take_request` hands it to Kotlin once.
 static OPEN_REQUESTED: AtomicBool = AtomicBool::new(false);
 /// What the picker is for (`open`, `picture`, `audio`, `video`), as the UI asked.
@@ -34,11 +39,16 @@ static REQUESTS: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 static FLIGHTS: Mutex<Vec<Flight>> = Mutex::new(Vec::new());
 /// Picked documents: (location, cache file path).
 static OPENED: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
-/// Successful presentation saves: (the presentation revision that was saved, the document's location).
-/// The app marks that revision clean and adopts the location (plain Save writes there next time).
-static SAVED: Mutex<Vec<(u64, Option<String>)>> = Mutex::new(Vec::new());
-/// The active presentation's revision at the start of this frame; a save queued now saves that state.
+/// Finished saves: (presentation uid, the revision that was saved, the document's location). The
+/// location is `None` when the save was cancelled or failed, and empty for a file that is not the
+/// presentation (an export). The app marks that revision clean and adopts the location (plain Save
+/// writes there next time).
+static SAVED: Mutex<Vec<(u64, u64, Option<String>)>> = Mutex::new(Vec::new());
+/// The active presentation's uid and revision at the start of this frame; a save queued now saves that state.
+static SAVE_UID: AtomicU64 = AtomicU64::new(0);
 static SAVE_REV: AtomicU64 = AtomicU64::new(0);
+/// The active presentation's location, when it has one a plain Save can write back to.
+static CURRENT: Mutex<Option<String>> = Mutex::new(None);
 /// Messages for the status line.
 static NOTICES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -46,14 +56,38 @@ static NOTICES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// whether a success makes the file the presentation's location (a `.xlsx`, Save As or write back).
 struct Flight {
     ticket: u64,
+    uid: u64,
     name: String,
     rev: u64,
     adopt: bool,
 }
 
-/// Called by the app each frame with the active presentation's revision.
-pub fn set_revision(rev: u64) {
+/// Called by the app each frame with the active presentation's uid and revision.
+pub fn set_revision(uid: u64, rev: u64) {
+    SAVE_UID.store(uid, Ordering::Relaxed);
     SAVE_REV.store(rev, Ordering::Relaxed);
+}
+
+/// Called by the app each frame with the active presentation's location, if it has one.
+pub fn set_current(loc: Option<String>) {
+    if let Ok(mut c) = CURRENT.lock() {
+        *c = loc;
+    }
+}
+
+/// The app asked to write `name`. A save of the active presentation under its own file name goes
+/// back to its document; anything else (Save As, a first save, an export) asks with the system dialog.
+pub fn save(name: &str, bytes: &[u8]) {
+    let current = CURRENT.lock().ok().and_then(|c| c.clone());
+    let rev = SAVE_REV.load(Ordering::Relaxed);
+    if let Some(loc) = current
+        && keeps_location(name)
+        && parse_location(&loc).is_some_and(|(_, n)| n == name)
+        && save_in_place(&loc, bytes, rev)
+    {
+        return;
+    }
+    save_as(name, bytes);
 }
 
 /// Asks Kotlin to show the document picker for `purpose`, as request `id`. One picker is up at a
@@ -150,31 +184,32 @@ fn queue(line: String, flight: Flight) {
 
 /// Reports a save of revision `rev` that never reached Kotlin as failed, so the app drops any
 /// "close after save" it was waiting for (`app::Shell::finish_save`).
-fn not_staged(rev: u64) {
+fn not_staged(uid: u64, rev: u64) {
     if let Ok(mut s) = SAVED.lock() {
-        s.push((rev, None));
+        s.push((uid, rev, None));
     }
     crate::ime::wake();
 }
 
 /// Save As: the system dialog creates a document named `name` holding `bytes`.
 pub fn save_as(name: &str, bytes: &[u8]) {
-    let rev = SAVE_REV.load(Ordering::Relaxed);
-    let Some((ticket, path)) = stage(name, bytes) else { return not_staged(rev) };
+    let (uid, rev) = (SAVE_UID.load(Ordering::Relaxed), SAVE_REV.load(Ordering::Relaxed));
+    let Some((ticket, path)) = stage(name, bytes) else { return not_staged(uid, rev) };
     let line = format!("save\t{ticket}\t{}\t{path}", tidy(name));
-    queue(line, Flight { ticket, name: name.to_string(), rev, adopt: keeps_location(name) });
+    queue(line, Flight { ticket, uid, name: name.to_string(), rev, adopt: keeps_location(name) });
 }
 
 /// Plain Save of a picked document: writes `bytes` (the presentation at revision `rev`) over `loc`. Returns
 /// `false` when `loc` is not a content location, so the caller can fall back to the engine's own Save.
 pub fn save_in_place(loc: &str, bytes: &[u8], rev: u64) -> bool {
     let Some((uri, name)) = parse_location(loc) else { return false };
+    let uid = SAVE_UID.load(Ordering::Relaxed);
     let Some((ticket, path)) = stage(name, bytes) else {
-        not_staged(rev);
+        not_staged(uid, rev);
         return true;
     };
     let line = format!("write\t{ticket}\t{uri}\t{path}");
-    queue(line, Flight { ticket, name: name.to_string(), rev, adopt: true });
+    queue(line, Flight { ticket, uid, name: name.to_string(), rev, adopt: true });
     true
 }
 
@@ -198,7 +233,7 @@ pub fn save_done(ticket: u64, status: i32, msg: String, display: String) {
         }
     };
     if let Ok(mut s) = SAVED.lock() {
-        s.push((flight.rev, outcome));
+        s.push((flight.uid, flight.rev, outcome));
     }
     crate::ime::wake();
 }
@@ -223,8 +258,8 @@ pub fn drain_notices() -> Vec<String> {
     NOTICES.lock().map(|mut n| n.drain(..).collect()).unwrap_or_default()
 }
 
-/// Successful saves since the last call: (revision saved, location).
-pub fn drain_saved() -> Vec<(u64, Option<String>)> {
+/// Saves that ended since the last call: (presentation uid, revision saved, location).
+pub fn drain_saved() -> Vec<(u64, u64, Option<String>)> {
     SAVED.lock().map(|mut s| s.drain(..).collect()).unwrap_or_default()
 }
 
@@ -289,21 +324,41 @@ mod tests {
     }
 
     #[test]
-    fn a_save_as_of_a_presentation_is_adopted_and_an_export_is_not() {
-        // One test owns the saved queue, so the parallel test runner cannot drain it under us.
-        // No storage folder is set in tests, so staging fails: the app must hear that the save ended
+    fn saves_are_routed_and_adopted_and_exports_are_not() {
+        // One test owns the saved queue and the storage folder, so the parallel test runner cannot
+        // drain it under us.
+        // No storage folder is set yet, so staging fails: the app must hear that the save ended
         // (a None outcome clears "close after save"), or a later plain Save could close the app.
+        set_revision(9, 4);
         let rev = SAVE_REV.load(Ordering::Relaxed);
         save_as("Deck1.pptx", b"x");
         assert!(save_in_place("content://d/u/Deck1.pptx", b"x", rev));
-        assert_eq!(drain_saved(), vec![(rev, None), (rev, None)], "a save that cannot be staged reports as failed");
+        assert_eq!(drain_saved(), vec![(9, 4, None), (9, 4, None)], "a save that cannot be staged reports as failed");
         let (ok, ex) = (7_000_001, 7_000_002);
-        queue("save".into(), Flight { ticket: ok, name: "Deck1.pptx".into(), rev: 5, adopt: keeps_location("Deck1.pptx") });
-        queue("save".into(), Flight { ticket: ex, name: "Book1.csv".into(), rev: 5, adopt: keeps_location("Book1.csv") });
+        queue("save".into(), Flight { ticket: ok, uid: 9, name: "Deck1.pptx".into(), rev: 5, adopt: keeps_location("Deck1.pptx") });
+        queue("save".into(), Flight { ticket: ex, uid: 9, name: "Book1.csv".into(), rev: 5, adopt: keeps_location("Book1.csv") });
         save_done(ok, 1, "content://d/u".into(), "Deck1.pptx".into());
         save_done(ex, 1, "content://d/p".into(), "Book1.csv".into());
         // The export is reported with an empty location: it did not adopt one, and it does not clean the presentation.
-        assert_eq!(drain_saved(), vec![(5, Some("content://d/u/Deck1.pptx".to_string())), (5, Some(String::new()))]);
+        assert_eq!(drain_saved(), vec![(9, 5, Some("content://d/u/Deck1.pptx".to_string())), (9, 5, Some(String::new()))]);
         assert!(drain_notices().iter().any(|n| n == "Saved Book1.csv"));
+
+        // With a storage folder, `save` writes back to the active presentation's document under its
+        // own name, and asks with the dialog for anything else.
+        let dir = std::env::temp_dir().join(format!("deckcraft-files-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = DIR.set(dir.clone());
+        while !take_request().is_empty() {}
+        set_current(Some("content://d/u/Deck1.pptx".into()));
+        save("Deck1.pptx", b"x");
+        assert!(take_request().starts_with("write\t"), "its own name goes back to the document");
+        save("Other.pptx", b"x");
+        assert!(take_request().starts_with("save\t"), "another name asks where to put it");
+        save("Deck1.pdf", b"x");
+        assert!(take_request().starts_with("save\t"), "an export asks where to put it");
+        set_current(None);
+        save("Deck1.pptx", b"x");
+        assert!(take_request().starts_with("save\t"), "a presentation with no document asks where to put it");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

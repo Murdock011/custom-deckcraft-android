@@ -34,8 +34,6 @@ static SEED: Mutex<(String, usize)> = Mutex::new((String::new(), 0));
 const SEED_SIDE: usize = 200;
 /// Whether egui wants the soft keyboard (a text position has focus). Kotlin polls it.
 pub static WANTS_KEYBOARD: AtomicBool = AtomicBool::new(false);
-/// Set when the activity pauses: the next frame writes the recovery copies (`file.recovery.save`).
-pub static FLUSH: AtomicBool = AtomicBool::new(false);
 /// Set by Enter or Tab from the keyboard, so it stays up for the next line; cleared by a touch, a scroll, or Escape.
 pub static KEEP_TYPING: AtomicBool = AtomicBool::new(false);
 /// Whether File › Close (or the quit prompt) ended the app: Kotlin finishes the activity (`SlideApp::quit_requested`).

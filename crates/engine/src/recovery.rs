@@ -137,25 +137,49 @@ pub fn discard(dir: &Path, uid: u64) {
     let _ = std::fs::remove_file(m);
 }
 
-/// Write entries for the unsaved presentations (and drop those of saved ones). Returns how many
-/// were written.
-pub fn save(s: &Session, dir: &Path) -> Result<usize> {
+/// What one recovery entry holds: an unsaved presentation as it was at some moment. The
+/// presentation is shared, not copied, so a host can keep a snapshot and write it from another
+/// thread (Android writes when the app is paused, when no frame follows).
+#[derive(Clone)]
+pub struct Snapshot {
+    pub uid: u64,
+    pub title: String,
+    pub path: Option<String>,
+    pub doc: std::sync::Arc<deckcraft_model::Presentation>,
+}
+
+/// Snapshots of the unsaved presentations of `s`.
+pub fn snapshots(s: &Session) -> Vec<Snapshot> {
+    s.documents()
+        .iter()
+        .filter(|d| d.is_dirty())
+        .map(|d| Snapshot { uid: d.uid, title: d.title(), path: d.path.clone(), doc: d.doc.clone() })
+        .collect()
+}
+
+/// Write one entry for each snapshot. Returns how many were written.
+pub fn save_snapshots(snaps: &[Snapshot], dir: &Path) -> Result<usize> {
     std::fs::create_dir_all(dir).map_err(|e| EngineError::Other(format!("{}: {e}", dir.display())))?;
     claim_dir(dir);
     let mut n = 0;
-    for d in s.documents() {
-        if !d.is_dirty() {
-            discard(dir, d.uid);
-            continue;
-        }
-        let (doc, meta) = files(dir, d.uid);
-        let bytes = deckcraft_format::save(&d.doc).map_err(|e| EngineError::Other(e.to_string()))?;
+    for snap in snaps {
+        let (doc, meta) = files(dir, snap.uid);
+        let bytes = deckcraft_format::save(&snap.doc).map_err(|e| EngineError::Other(e.to_string()))?;
         write_atomic(&doc, &bytes)?;
-        let m = json!({"path": d.path, "title": d.title(), "saved": now_secs(), "owner": instance_id()});
+        let m = json!({"path": snap.path, "title": snap.title, "saved": now_secs(), "owner": instance_id()});
         write_atomic(&meta, m.to_string().as_bytes())?;
         n += 1;
     }
     Ok(n)
+}
+
+/// Write entries for the unsaved presentations (and drop those of saved ones). Returns how many
+/// were written.
+pub fn save(s: &Session, dir: &Path) -> Result<usize> {
+    for d in s.documents().iter().filter(|d| !d.is_dirty()) {
+        discard(dir, d.uid);
+    }
+    save_snapshots(&snapshots(s), dir)
 }
 
 /// Entries in `dir`: (uid, metadata).
@@ -267,6 +291,28 @@ mod tests {
         assert_eq!(id & 0xFF_FFFF, 0);
         let encoded = serde_json::to_value(id).unwrap();
         assert_eq!(encoded.as_f64().unwrap() as u64, id);
+    }
+
+    /// A snapshot taken on one thread is written from another, after the session moved on, and the
+    /// entry holds the presentation as it was when the snapshot was taken.
+    #[test]
+    fn a_snapshot_is_written_from_another_thread_as_it_was() {
+        let dir = temp("snapshot");
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("slide.new", &json!({"layout": "blank"})).unwrap();
+        let snaps = snapshots(&s);
+        assert_eq!(snaps.len(), 1);
+        let slides = snaps[0].doc.slides.len();
+        // The session carries on editing; the snapshot does not change.
+        s.execute("slide.new", &json!({"layout": "blank"})).unwrap();
+        let d = dir.clone();
+        let written = std::thread::spawn(move || save_snapshots(&snaps, &d)).join().unwrap().unwrap();
+        assert_eq!(written, 1);
+        let mut t = Session::new();
+        assert_eq!(open(&mut t, &dir).unwrap().len(), 1);
+        assert_eq!(t.active().unwrap().doc.slides.len(), slides, "the entry holds the snapshot, not the later edit");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -107,7 +107,7 @@ fn gpu_setup() -> Result<eframe::egui_wgpu::WgpuSetup, String> {
 
 /// `ImeView` -> Rust. `kind`: 0 commit, 1 composing text, 2 finish composing, 3 delete surrounding
 /// (`a` before, `b` after, in code points), 4 key press (`a` is the KeyEvent code), 5 composing
-/// region (`a`..`b`, UTF-16 offsets into the context text).
+/// region (`a`..`b`, UTF-16 offsets into the context text; Kotlin does not send it yet).
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nativeIme<'local>(
@@ -277,9 +277,8 @@ pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nati
     _env: EnvUnowned<'local>,
     _this: JObject<'local>,
 ) {
-    // The engine's recovery store is written on the UI thread (`file.recovery.save`): ask for it and wake a frame.
-    ime::FLUSH.store(true, Ordering::Relaxed);
-    ime::wake();
+    // Writes the latest copies on this thread: no frame is needed, so this works while the window is gone.
+    crate::app::write_pending();
 }
 
 /// The next copy for the system clipboard, prefixed with `c`; empty when there is none.

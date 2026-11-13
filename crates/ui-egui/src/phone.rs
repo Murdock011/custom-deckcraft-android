@@ -95,7 +95,7 @@ pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
                 (Icon::Bold, "Bold", "format.bold"),
                 (Icon::Italic, "Italic", "format.italic"),
                 (Icon::Underline, "Underline", "format.underline"),
-                (Icon::DeleteSlide, "Delete slide", "slide.delete"),
+                (Icon::DuplicateSlide, "Duplicate slide", "slide.duplicate"),
             ];
             for (icon, label, id) in tools {
                 if icon_button(ui, icon, label, true, false).clicked() {

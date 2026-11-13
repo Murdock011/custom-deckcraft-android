@@ -632,13 +632,9 @@ class MainActivity : GameActivity() {
         }
 
         override fun setComposingRegion(start: Int, end: Int): Boolean {
-            val lo = minOf(start, end).coerceIn(0, ctxText.length)
-            val hi = maxOf(start, end).coerceIn(0, ctxText.length)
-            if (lo < hi) {
-                ctxComp = lo
-                ctxCompEnd = hi
-                send(5, "", lo, hi)
-            }
+            // Rust cannot re-compose words already in the text yet, so the region is not adopted: marking it here
+            // while Rust holds no composition made the next composing text land after the word instead of
+            // replacing it, and a message Rust never counted stopped the context pulls for the rest of the run.
             return true
         }
 

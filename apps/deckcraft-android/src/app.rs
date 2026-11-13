@@ -5,9 +5,12 @@
 //! slide canvas and the dialogs' text fields already handle. Files go through the system picker
 //! (`files.rs`); unsaved work is kept by the engine's own recovery store.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 
-use deckcraft_engine::Session;
+use deckcraft_engine::cmd::file::mark_saved;
+use deckcraft_engine::{Session, recovery};
 use deckcraft_ui_egui::{Inbox, InboxEvent, InboxFile, Services, SlideApp};
 use egui::{Event, Key};
 
@@ -25,6 +28,25 @@ const KEYCODE_TAB: i32 = 61;
 /// Most keys one `Delete` message may erase, so a hostile count can't flood the queue.
 const MAX_ERASE: usize = 256;
 
+/// The unsaved presentations as the recovery copies should hold them, refreshed whenever one changes.
+/// The pause flush (a JNI call, with no frame to wait for) writes this from its own thread.
+static PENDING: Mutex<Vec<recovery::Snapshot>> = Mutex::new(Vec::new());
+/// Serializes the writes: the engine's timed save and the pause flush use the same files.
+static WRITE: Mutex<()> = Mutex::new(());
+
+/// Writes the pending recovery copies, from any thread. Failures are logged; editing carries on.
+pub fn write_pending() {
+    let Some(dir) = files::recovery_dir() else { return };
+    let _write = WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    let pending = PENDING.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if pending.is_empty() {
+        return;
+    }
+    if let Err(e) = recovery::save_snapshots(&pending, &dir) {
+        log::warn!("recovery copies not written: {e}");
+    }
+}
+
 pub struct Shell {
     app: SlideApp,
     /// Events from the keyboard, handed to egui with the next frame's input.
@@ -34,6 +56,13 @@ pub struct Shell {
     /// The active presentation, slide and selection last frame; a change calls `ime::retarget`.
     ime_target: String,
     inbox: Inbox,
+    /// The unsaved presentations as (uid, revision) when `PENDING` was last refreshed.
+    seen: Vec<(u64, u64)>,
+    /// Where each picked or saved presentation lives (its content location), by presentation uid.
+    /// Plain Save writes back there.
+    locs: HashMap<u64, String>,
+    /// Locations of the presentations queued for opening this frame (see `adopt_opened`).
+    opening: Vec<String>,
 }
 
 impl Shell {
@@ -43,12 +72,12 @@ impl Shell {
         let services = Services {
             open_async: Some(Box::new(|purpose: &str, id: u64| files::request_open(purpose, id))),
             inbox: Some(inbox.clone()),
-            download: Some(Box::new(|name: &str, bytes: &[u8]| files::save_as(name, bytes))),
+            download: Some(Box::new(|name: &str, bytes: &[u8]| files::save(name, bytes))),
             ..Default::default()
         };
         let mut app = SlideApp::new(Session::new(), services);
         // AutoRecover, as on the desktop: reopen what a previous run left unsaved.
-        if let Some(dir) = files::DIR.get().map(|d| d.join("recovery")) {
+        if let Some(dir) = files::recovery_dir() {
             app.session.recovery_dir = Some(dir);
             if let Ok(v) = app.session.execute("file.recovery.open", &serde_json::json!({}))
                 && let Some(n) = v.get("opened").and_then(|o| o.as_array()).map(Vec::len).filter(|n| *n > 0)
@@ -56,7 +85,16 @@ impl Shell {
                 app.set_status(format!("Recovered {n} unsaved presentation{}", if n == 1 { "" } else { "s" }));
             }
         }
-        Shell { app, pending: Vec::new(), composing: String::new(), ime_target: String::new(), inbox }
+        Shell {
+            app,
+            pending: Vec::new(),
+            composing: String::new(),
+            ime_target: String::new(),
+            inbox,
+            seen: Vec::new(),
+            locs: HashMap::new(),
+            opening: Vec::new(),
+        }
     }
 
     /// Turns the keyboard's messages into egui events for the next frame.
@@ -123,6 +161,41 @@ impl Shell {
         }
     }
 
+    /// The active presentation lives at `loc` now: plain Save writes back to it.
+    fn adopt(&mut self, loc: &str) {
+        if let Some(uid) = self.app.session.active().map(|d| d.uid) {
+            self.locs.insert(uid, loc.to_string());
+        }
+    }
+
+    /// A save of revision `rev` of presentation `uid` ended. `outcome` is `None` when it was cancelled or
+    /// failed, and empty for a file that is not the presentation (an export). If the presentation is
+    /// still at that revision it is clean now, as after a desktop save, and lives at the location;
+    /// edits made since the save was asked for leave it unsaved.
+    fn finish_save(&mut self, uid: u64, rev: u64, outcome: Option<String>) {
+        let Some(loc) = outcome.filter(|l| !l.is_empty()) else { return };
+        if !self.app.session.active().is_some_and(|d| d.uid == uid && d.revision == rev) {
+            return;
+        }
+        let name = files::parse_location(&loc).map_or_else(|| loc.clone(), |(_, n)| n.to_string());
+        match mark_saved(&mut self.app.session, Some(name)) {
+            Ok(()) => {
+                self.locs.insert(uid, loc);
+            }
+            Err(e) => log::warn!("saved presentation not marked clean: {e}"),
+        }
+    }
+
+    /// Keeps `PENDING` current: a change to the unsaved presentations replaces it at once, so the pause
+    /// flush writes the latest state even when no frame follows the edit.
+    fn track_recovery(&mut self) {
+        let state: Vec<(u64, u64)> = self.app.session.documents().iter().filter(|d| d.is_dirty()).map(|d| (d.uid, d.revision)).collect();
+        if state != self.seen {
+            *PENDING.lock().unwrap_or_else(|e| e.into_inner()) = recovery::snapshots(&self.app.session);
+            self.seen = state;
+        }
+    }
+
     /// Files picked since the last frame go to the UI's inbox under their request ids; notices go to
     /// the status line.
     fn drain_files(&mut self) {
@@ -131,10 +204,21 @@ impl Shell {
         for (id, loc, bytes) in files::drain_opened() {
             let name = files::parse_location(&loc).map_or_else(|| loc.clone(), |(_, n)| n.to_string());
             match id {
-                Some(id) => files_in.push(InboxFile { id, name, bytes }),
+                Some(id) => {
+                    if files::keeps_location(&name) {
+                        self.opening.push(loc.clone());
+                    }
+                    files_in.push(InboxFile { id, name, bytes });
+                }
                 // Another app handed the file over (Open with, Share): there is no request, so it
                 // opens or inserts as a dropped file does.
-                None => self.app.open_or_insert_bytes(&name, &bytes),
+                None => {
+                    let before = self.app.session.active().map(|d| d.uid);
+                    self.app.open_or_insert_bytes(&name, &bytes);
+                    if files::keeps_location(&name) && self.app.session.active().map(|d| d.uid) != before {
+                        self.adopt(&loc);
+                    }
+                }
             }
         }
         {
@@ -155,13 +239,23 @@ impl eframe::App for Shell {
         if !self.pending.is_empty() {
             ctx.request_repaint();
         }
-        // The activity is pausing: write the recovery copies now, the process may be killed next.
-        if ime::FLUSH.swap(false, Ordering::Relaxed)
-            && let Err(e) = self.app.session.execute("file.recovery.save", &serde_json::json!({}))
-        {
-            log::warn!("recovery copies not written: {e}");
-        }
+        // Saves queued during this frame's input save this revision, to this document.
+        let active = self.app.session.active().map(|d| (d.uid, d.revision));
+        files::set_revision(active.map_or(0, |a| a.0), active.map_or(0, |a| a.1));
+        files::set_current(active.and_then(|a| self.locs.get(&a.0).cloned()));
+        // Inbox files open inside `logic`: the presentation that became active lives where it was picked.
+        let before = active.map(|a| a.0);
         self.app.logic(ctx);
+        let opened = std::mem::take(&mut self.opening);
+        if self.app.session.active().map(|d| d.uid) != before
+            && let Some(loc) = opened.last().cloned()
+        {
+            self.adopt(&loc);
+        }
+        for (uid, rev, outcome) in files::drain_saved() {
+            self.finish_save(uid, rev, outcome);
+        }
+        self.track_recovery();
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
@@ -173,6 +267,12 @@ impl eframe::App for Shell {
                 Event::PointerMoved(p) | Event::PointerButton { pos: p, .. } | Event::Touch { pos: p, .. } => *p -= shift,
                 _ => {}
             }
+        }
+        // egui-winit has no Android clipboard, so a hardware keyboard's Ctrl+V brings no text: hand over what
+        // ClipboardManager holds, as the paste the shortcut asks for.
+        let pasted = raw.events.iter().any(|e| matches!(e, Event::Key { key: Key::V, pressed: true, modifiers, .. } if modifiers.command));
+        if pasted && let Some(t) = clip::text() {
+            raw.events.push(Event::Paste(t));
         }
         raw.events.append(&mut self.pending);
         raw.system_theme = Some(if ime::NIGHT.load(Ordering::Relaxed) { egui::Theme::Dark } else { egui::Theme::Light });
