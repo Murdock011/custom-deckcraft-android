@@ -72,6 +72,18 @@ pub fn request_open(purpose: &str, id: u64) {
     crate::ime::wake();
 }
 
+/// Kotlin: the picker was dismissed, or the picked file could not be read. The oldest open request
+/// is over, and the UI hears it as cancelled.
+pub fn open_cancelled() {
+    let id = OPEN_IDS.lock().ok().and_then(|mut ids| ids.pop_front());
+    if let Some(id) = id
+        && let Ok(mut c) = CANCELLED.lock()
+    {
+        c.push(id);
+    }
+    crate::ime::wake();
+}
+
 /// Requests that a newer request replaced since the last call.
 pub fn drain_cancelled() -> Vec<u64> {
     CANCELLED.lock().map(|mut c| c.drain(..).collect()).unwrap_or_default()
@@ -245,6 +257,25 @@ pub fn drain_opened() -> Vec<(Option<u64>, String, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A newer open request cancels the one still waiting; a picked file answers the oldest one; a
+    /// dismissed picker cancels it. (One test: the queues are process-wide.)
+    #[test]
+    fn open_requests_are_answered_in_order_and_replaced_ones_are_cancelled() {
+        let _ = drain_cancelled();
+        request_open("open", 1);
+        request_open("picture", 2);
+        assert_eq!(drain_cancelled(), vec![1], "the newer request replaces the waiting one");
+        assert_eq!(take_request(), "open\tpicture");
+        open_cancelled();
+        assert_eq!(drain_cancelled(), vec![2], "a dismissed picker cancels the request");
+        open_cancelled();
+        assert!(drain_cancelled().is_empty(), "nothing is waiting, so nothing is cancelled");
+        request_open("a/b c!", 3);
+        assert_eq!(take_request(), "open\tabc", "the purpose is reduced to letters and digits");
+        open_cancelled();
+        let _ = drain_cancelled();
+    }
 
     #[test]
     fn locations_keep_the_name_last_and_round_trip() {

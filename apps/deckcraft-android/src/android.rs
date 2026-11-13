@@ -229,6 +229,16 @@ pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nati
     files::opened(name, path, uri);
 }
 
+/// The picker was dismissed, or the picked file could not be read (see `files::open_cancelled`).
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nativeOpenCancelled<'local>(
+    _env: EnvUnowned<'local>,
+    _this: JObject<'local>,
+) {
+    files::open_cancelled();
+}
+
 /// A save ended (see `files::save_done`): status 1 saved (`msg` is the URI, `display` its name),
 /// 0 cancelled, anything else failed with `msg`.
 #[allow(unsafe_code)]

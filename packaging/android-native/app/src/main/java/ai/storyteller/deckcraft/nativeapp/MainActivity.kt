@@ -255,7 +255,10 @@ class MainActivity : GameActivity() {
                 nativeOpened(name, dest.path, uri.toString())
             } catch (e: Exception) {
                 nativeNotice(readFailure(displayName(uri), e))
+                nativeOpenCancelled()
             }
+        } else {
+            nativeOpenCancelled()
         }
         filesBusy = false
         nextFile()
@@ -552,6 +555,9 @@ class MainActivity : GameActivity() {
 
     /** The user picked the document at [uri]; its bytes are in the cache file at [path]. */
     private external fun nativeOpened(name: String, path: String, uri: String)
+
+    /** The picker was dismissed, or the picked file could not be read: the open request is over. */
+    private external fun nativeOpenCancelled()
 
     /** Next copy for the system clipboard, prefixed with "c", or an empty string. */
     private external fun nativeTakeClip(): String
