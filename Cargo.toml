@@ -109,8 +109,9 @@ ecolor = { git = "https://github.com/storytold/egui.git", rev = "6d518fc79968157
 emath = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 epaint = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 epaint_default_fonts = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
-egui = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
-egui-winit = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+# Vendored egui 0.37 (storytold/egui rev 6d518fc) and egui-winit with Android keyboard patches; see vendor/*/LICENSE-NOTE.md.
+egui = { path = "vendor/egui" }
+egui-winit = { path = "vendor/egui-winit" }
 egui-wgpu = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 egui_glow = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 egui_extras = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
@@ -120,3 +121,9 @@ eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc79968157
 egui_demo_lib = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 egui_inspection = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
+
+# eframe comes from the storytold git source, which has its own egui and egui-winit. Point those at the
+# vendored copies too, so there is one egui and one egui-winit (with the Android keyboard patches).
+[patch."https://github.com/storytold/egui.git"]
+egui = { path = "vendor/egui" }
+egui-winit = { path = "vendor/egui-winit" }

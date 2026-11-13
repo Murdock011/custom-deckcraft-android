@@ -52,6 +52,7 @@ mod app;
 mod clock;
 mod ime_hooks;
 pub mod panels;
+mod phone;
 mod services;
 mod state;
 

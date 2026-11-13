@@ -1,5 +1,6 @@
 use super::clock::{monotonic_secs, now_ms};
 use super::ime_hooks::ime_in_ui_pass_key;
+use super::phone;
 use super::services::{InboxEvent, Services};
 use super::state::{FilePlace, FilePurpose, ImeDescriptorKey, ImeDestination, ImeTerminalStamp, LocatedPlace, RECENT_MAX, UiState, ViewMode};
 #[cfg(not(target_arch = "wasm32"))]
@@ -178,6 +179,12 @@ impl SlideApp {
         self.backstage.is_some() && self.session.active().is_some()
     }
 
+    /// Whether Android's Back button has something to close first: the File tab's view or a dialog.
+    /// The Android host asks each frame and sends Escape when this is true.
+    pub fn can_go_back(&self) -> bool {
+        self.backstage_open() || self.dialog.is_some()
+    }
+
     /// Opens the File tab's view on `page` (keeping its state when it is already open).
     pub fn open_backstage(&mut self, page: backstage::Page) {
         let key = self.docs_key();
@@ -316,10 +323,23 @@ impl SlideApp {
         self.sync_backstage();
         self.keyboard(&ctx);
         self.sync_backstage();
-        ribbon::title_bar(self, ui);
-        if self.backstage.is_none() && self.session.active().is_some() {
-            ribbon::show(self, ui);
-            status::status_bar(self, ui);
+        let phone = phone::active(&ctx);
+        if phone {
+            // A narrow window (a phone): the app bar, slide chips and toolbar replace the title
+            // bar, ribbon, thumbnail pane and status bar. The File view keeps its app bar so
+            // it can be closed again.
+            if self.session.active().is_some() {
+                phone::top_bar(self, ui);
+                if self.backstage.is_none() {
+                    phone::bottom_bar(self, ui);
+                }
+            }
+        } else {
+            ribbon::title_bar(self, ui);
+            if self.backstage.is_none() && self.session.active().is_some() {
+                ribbon::show(self, ui);
+                status::status_bar(self, ui);
+            }
         }
         let now = ui.input(|i| i.time);
         if self.tick_anim_preview(now) {
@@ -338,16 +358,16 @@ impl SlideApp {
                 ViewMode::Sorter => sorter::show(self, ui),
                 ViewMode::NotesPage => sorter::notes_page(self, ui),
                 ViewMode::Outline | ViewMode::Normal | ViewMode::Reading => {
-                    if self.ui.pane.is_some() {
+                    if !phone && self.ui.pane.is_some() {
                         panes::show(self, ui);
                     }
                     if self.ui.view == ViewMode::Outline {
                         sorter::outline_pane(self, ui);
-                    } else {
+                    } else if !phone {
                         thumbs::show(self, ui);
                     }
                     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
-                        if self.ui.notes {
+                        if !phone && self.ui.notes {
                             status::notes_pane(self, ui);
                         }
                         canvas::show(self, ui);

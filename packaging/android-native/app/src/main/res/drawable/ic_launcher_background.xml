@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive launcher icon background: the tile colour of assets/app-icon/deckcraft-1024.png (#F26B1D). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F26B1D"
+        android:pathData="M0,0H108V108H0Z" />
+</vector>
