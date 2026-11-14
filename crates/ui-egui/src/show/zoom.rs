@@ -263,7 +263,18 @@ pub(super) fn toggle_blank(show: &mut Show, color: Color32) {
     show.blank = if show.blank == Some(color) { None } else { Some(color) };
 }
 
+/// Whether the on-screen controls use the touch layout: a window as narrow as a phone's.
+pub(super) fn touch_bar(full: Rect) -> bool {
+    full.width() < crate::phone::MAX_WIDTH
+}
+
+/// Height of the touch layout's bar and the side of its buttons: the 48 pt Android touch minimum.
+pub(super) const TOUCH_BAR_H: f32 = 56.0;
+
 pub(super) fn tool_bar_rect(full: Rect) -> Rect {
+    if touch_bar(full) {
+        return Rect::from_min_size(pos2(full.min.x + 8.0, full.max.y - TOUCH_BAR_H - 16.0), vec2((full.width() - 16.0).max(48.0), TOUCH_BAR_H));
+    }
     let w = TOOL_BAR_W.min((full.width() - 32.0).max(32.0));
     Rect::from_min_size(pos2(full.min.x + 16.0, full.max.y - 50.0), vec2(w, 34.0))
 }

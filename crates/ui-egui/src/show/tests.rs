@@ -1412,3 +1412,39 @@ fn a_swipe_turns_the_page() {
     drag(&mut harness, pos2(100.0, 400.0), pos2(300.0, 395.0));
     assert_eq!(slide(&harness), Some(0), "a drag right goes back");
 }
+
+/// On a phone the show's controls are the touch bar: one row inside the window, every button the
+/// 48 pt Android minimum, and a tap on Pen turns the pen on.
+#[test]
+fn the_show_controls_are_touch_sized_on_a_phone() {
+    let phone = Rect::from_min_size(pos2(0.0, 0.0), vec2(390.0, 800.0));
+    let bar = zoom::tool_bar_rect(phone);
+    assert!(phone.contains_rect(bar), "{bar:?} is inside the window");
+    assert!(bar.height() >= 48.0 && zoom::TOUCH_BAR_H >= 48.0);
+    let desktop = Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 720.0));
+    assert!(zoom::tool_bar_rect(desktop).height() < 48.0, "the desktop bar is unchanged");
+
+    let mut session = deckcraft_engine::Session::new();
+    deckcraft_engine::sample::open_sample(&mut session).expect("sample deck opens");
+    let mut app = SlideApp::new(session, crate::Services::default());
+    app.ui.presenter_view = false;
+    let mut harness = egui_kittest::Harness::builder().with_size(vec2(390.0, 800.0)).with_step_dt(0.1).build_ui_state(
+        |ui, app: &mut SlideApp| {
+            app.logic(ui.ctx());
+            app.ui(ui);
+        },
+        app,
+    );
+    harness.run_steps(3);
+    harness.state_mut().start_show(0, false);
+    harness.run_steps(2);
+    // A touch wakes the controls (the bar shows while the pointer is awake).
+    harness.event(egui::Event::PointerMoved(pos2(200.0, 300.0)));
+    harness.run_steps(2);
+    {
+        use egui_kittest::kittest::Queryable;
+        harness.get_by_label("✏").click();
+    }
+    harness.run_steps(2);
+    assert!(harness.state().show.as_ref().is_some_and(|s| s.pen), "Pen is on after the tap");
+}

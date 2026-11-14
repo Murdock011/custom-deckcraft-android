@@ -47,7 +47,8 @@ There is no release yet, and no build has been made. When a release is made it w
   in view and editable: slide layouts and order, shapes, tables, charts and media, text formatting
   with colour swatches, arrange and alignment, cut, copy and paste, view, panes and Play. Every
   tile runs the same command as the desktop ribbon. In a slide show, tap goes forward, swipe left
-  or right turns the page, and Back ends the show.
+  or right turns the page, a bar of 48 pt buttons (Back, Next, Pen, Laser, Blank, All, End) shows
+  after a touch, and Back ends the show.
 - Opening presentations through the system file picker (.pptx, .ppsx, .potx, .deckcraft), and
   saving through the system save dialog. Plain Save writes back to the document that was opened,
   and the unsaved dot clears only after the system reports the save worked.
@@ -62,8 +63,7 @@ emulator.
 - Built as an arm64 debug APK, but not yet tried on an emulator or a phone. Expect bugs.
 - The soft keyboard bridge is new and has only been tested on the desktop. Suggestions are still
   turned off until typing is confirmed on a device.
-- Pen and laser have no touch controls in the slide show.
-- File ▸ Close does not end the app.
+- Pinch zoom, pen and laser by touch have only been tried in desktop tests.
 
 Work in progress is logged step by step in [notes/native-port.md](notes/native-port.md).
 

@@ -48,7 +48,8 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - All touch targets are at least 48 pt (tiles 68 pt tall, swatches 48 pt); a compile-time check
   covers the constants.
 - Back (Escape) closes an open sheet, and ends a slide show. `can_go_back` reports both.
-- Slide show: a finger swipe left or right turns the page (`show/ui.rs`, `swipe_direction`).
+- Slide show: a finger swipe left or right turns the page (`show/ui.rs`, `swipe_direction`). On a
+  window narrower than 600 pt the on-screen controls are one row of 48 pt buttons (`touch_tool_bar`).
 - Not run on a device. Tests cover tile command ids, dialog ids, tab toggling, Back, and a draw at
   phone width. `DECKCRAFT_SHOT_DIR=… cargo test -p deckcraft-ui-egui --lib sheet_screenshots`
   writes a PNG of each sheet (needs a Vulkan driver such as lavapipe).
@@ -59,6 +60,8 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - Check the keyboard on a device: typing, suggestions over a word, Enter and Tab, and the first tap
   after a composition (the reset). Once that works, switch the input type from `NO_SUGGESTIONS` to
   auto-correct. Host tests cover the translator; Kotlin and Gboard are not tested.
-- Pinch zoom on a device, show controls for pen
-  and laser by touch.
-- File ▸ Close does not end the activity.
+- Pinch zoom on a device.
+- Slide show: the touch bar (Back, Next, Pen, Laser, Blank, All, End) shows after a touch. On a phone
+  the first tap near the bottom shows it instead of turning the page.
+- File ▸ Close closes the presentation and shows Home, as on the desktop; Back from Home leaves the
+  app.
