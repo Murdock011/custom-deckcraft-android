@@ -215,7 +215,19 @@ class MainActivity : GameActivity() {
 
     private companion object {
         const val PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+        /**
+         * Whether an activity in this process has started the native UI loop. The loop (eframe) can run only
+         * once per process, so a second activity (the system recreates MainActivity for a change it cannot be
+         * told to handle itself, such as a resource overlay or a theme colour change) hands over to
+         * [RestartActivity], which ends this process and starts a fresh one.
+         */
+        @Volatile
+        var nativeStarted = false
     }
+
+    /** This instance is the second one in the process: it only hands over to [RestartActivity] and finishes. */
+    private var restarting = false
 
     private class CreateDoc : ActivityResultContract<Pair<String, String>, Uri?>() {
         override fun createIntent(context: Context, input: Pair<String, String>) =
@@ -363,6 +375,15 @@ class MainActivity : GameActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (nativeStarted) {
+            // Recreated in a process whose UI loop already ran: restart the app, recovering the work (the
+            // old instance flushed it in onDestroy). The helper runs in its own process, so it outlives this one.
+            restarting = true
+            startActivity(Intent(this, RestartActivity::class.java).putExtra("pid", android.os.Process.myPid()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            finish()
+            return
+        }
+        nativeStarted = true
         val content = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
@@ -486,7 +507,7 @@ class MainActivity : GameActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus) return
+        if (restarting || !hasFocus) return
         readClip()
         // Returning from Recents: Android restores the soft keyboard for the focused imeView before the poll runs.
         // Hide it here when the poll would not want it, and drop the focus that restores it.
@@ -499,6 +520,7 @@ class MainActivity : GameActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (restarting) return
         resumeHold = true
     }
 
@@ -512,25 +534,33 @@ class MainActivity : GameActivity() {
     // writes the latest copies on this thread (Rust, recovery), so it does not need the window to draw.
     override fun onPause() {
         super.onPause()
-        nativeFlushRecovery()
+        if (!restarting) nativeFlushRecovery()
     }
 
     override fun onStop() {
         super.onStop()
-        nativeFlushRecovery()
+        if (!restarting) nativeFlushRecovery()
     }
 
     override fun onDestroy() {
-        // The UI loop ends with the activity. Flush first (Rust writes the copies here), then end the process, so
-        // the kill never comes before the copies are written; a new activity in this process is restarted in a
-        // fresh one (onCreate). The kill runs on its own thread: super.onDestroy() can wait on the native loop.
+        if (restarting) {
+            // Nothing was set up in this instance; RestartActivity ends the process.
+            super.onDestroy()
+            return
+        }
+        // Copy unsaved work first (Rust writes the copies on this thread).
         nativeFlushRecovery()
-        Thread { android.os.Process.killProcess(android.os.Process.myPid()) }.start()
+        // The UI loop ends with the activity and cannot start twice in one process. When the activity is
+        // finishing (Back from Home, Close, removed from Recents), end the process so the next launch is a
+        // cold start. When the system is only recreating it, keep the process: the new instance's onCreate
+        // hands over to RestartActivity, which restarts the app from a live, visible activity (a restart
+        // scheduled from a dying process would be blocked by Android's background-start limits). The kill
+        // runs on its own thread: super.onDestroy() can wait on the native loop.
+        if (isFinishing) Thread { android.os.Process.killProcess(android.os.Process.myPid()) }.start()
         clipboard.removePrimaryClipChangedListener(clipListener)
         handler.removeCallbacks(keyboardPoll)
         super.onDestroy()
     }
-
 
     private fun showKeyboard() {
         // The keyboard comes up on the current text: the copy from before it went down may be stale.

@@ -88,6 +88,8 @@ pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
         egui::ScrollArea::horizontal().id_salt("phone_chips").auto_shrink([false, true]).show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
+                // Room for the current slide's 3 pt frame at the screen edge.
+                ui.add_space(6.0);
                 for i in 0..doc.slides.len() {
                     let (rect, resp) = ui.allocate_exact_size(vec2(chip_w, CHIP_H), Sense::click());
                     let selected = i == current;

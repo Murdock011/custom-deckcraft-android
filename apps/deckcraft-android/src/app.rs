@@ -93,7 +93,9 @@ impl Shell {
     /// Kotlin reads is published after the frame that applied them.
     fn drain_ime(&mut self) {
         while let Some(m) = ime::pop() {
+            let desc = format!("{m:?}");
             let events = self.keyboard.handle(m);
+            log::debug!("DBG ime msg {desc} -> {} events", events.len());
             if !events.is_empty() {
                 self.pending.extend(events);
                 break;
@@ -240,6 +242,9 @@ impl eframe::App for Shell {
         // egui waits for the platform to acknowledge a reset of the input method, and Android sends no
         // acknowledgement itself: Kotlin restarts the keyboard and answers (`Msg::ResetDone`).
         let reset = self.app.pending_ime_reset(ui.ctx().viewport_id());
+        if reset.is_some() {
+            log::debug!("DBG egui waits on reset {:?}", reset.map(|r| r.as_u64()));
+        }
         if self.keyboard.on_reset_request(reset)
             && let Some(id) = reset
         {

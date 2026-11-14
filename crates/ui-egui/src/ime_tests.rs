@@ -1996,3 +1996,24 @@ fn a_host_can_read_the_pending_reset_and_acknowledge_it() {
     h.run_steps(1);
     assert_eq!(title_text(h.state()), "日Q", "and input is accepted again");
 }
+
+/// Letters the keyboard commits one at a time, repeated letters included, all land in the text.
+/// The host sends one commit per frame; `hello` has a doubled letter.
+#[test]
+fn separate_commits_of_a_word_with_a_doubled_letter_all_land() {
+    let mut h = harness(Session::with_new());
+    let title = h.state().session.active().unwrap().doc.slides[0].shapes[0].id.0;
+    h.state_mut().run("text.edit", json!({"id": title})).unwrap();
+    h.run_steps(2);
+    for c in ["h", "e", "l", "l", "o"] {
+        h.event(Event::Ime(ImeEvent::Commit(c.into())));
+        h.run_steps(1);
+    }
+    assert_eq!(title_text(h.state()), "hello");
+    // And the same with a frame or two of nothing between letters.
+    for c in [" w", "o", "r", "l", "d"] {
+        h.event(Event::Ime(ImeEvent::Commit(c.into())));
+        h.run_steps(3);
+    }
+    assert_eq!(title_text(h.state()), "hello world");
+}
