@@ -42,9 +42,12 @@ There is no release yet, and no build has been made. When a release is made it w
 
 - A native Android host: the DeckCraft interface runs in an eframe window on `android-activity`.
 - A phone layout for windows narrower than 600 pt: an app bar (File, the presentation name,
-  Undo, Redo, Play from start), a row of slide chips, and a bottom toolbar (New slide, Text box,
-  Bold, Italic, Underline, Duplicate slide). Every button runs the same command as the desktop
-  ribbon.
+  Undo, Redo, Play from start), a row of slide chips, and a bottom tab bar (Slides, Insert, Text,
+  Shape, Edit, More). A tab opens a sheet of large labelled tiles above the bar, so the slide stays
+  in view and editable: slide layouts and order, shapes, tables, charts and media, text formatting
+  with colour swatches, arrange and alignment, cut, copy and paste, view, panes and Play. Every
+  tile runs the same command as the desktop ribbon. In a slide show, tap goes forward, swipe left
+  or right turns the page, and Back ends the show.
 - Opening presentations through the system file picker (.pptx, .ppsx, .potx, .deckcraft), and
   saving through the system save dialog. Plain Save writes back to the document that was opened,
   and the unsaved dot clears only after the system reports the save worked.
@@ -69,7 +72,7 @@ Work in progress is logged step by step in [notes/native-port.md](notes/native-p
 
 - `apps/deckcraft-android/`: the native Android host (Rust).
 - `packaging/android-native/`: the Gradle project, `build-native.sh` and the app icon.
-- `crates/ui-egui/src/phone.rs` and small hooks in `crates/ui-egui/src/app.rs`: the phone layout.
+- `crates/ui-egui/src/phone.rs`, `phone_sheet.rs` and small hooks in `crates/ui-egui/src/app.rs`: the phone layout.
   They only apply on narrow screens; the desktop layout is unchanged.
 - `vendor/egui`, `vendor/egui-winit`: egui 0.37 with the Android keyboard patches the sibling forks
   use (see each `LICENSE-NOTE.md`).

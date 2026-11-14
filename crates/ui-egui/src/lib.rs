@@ -53,6 +53,7 @@ mod clock;
 mod ime_hooks;
 pub mod panels;
 mod phone;
+mod phone_sheet;
 mod services;
 mod state;
 
@@ -230,6 +231,8 @@ pub struct SlideApp {
     /// Spelling squiggles, checked on a worker thread.
     pub squiggles: squiggles::Squiggles,
     pub dialog: Option<dialogs::Dialog>,
+    /// The open phone bottom sheet (phone layout only).
+    pub phone_sheet: Option<phone_sheet::Sheet>,
     /// The word looked up in the Thesaurus pane.
     pub thesaurus_query: String,
     pub show: Option<show::Show>,

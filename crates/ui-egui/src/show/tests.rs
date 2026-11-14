@@ -1369,3 +1369,46 @@ fn transition_preview_for_first_slide_transitions_from_black() {
     assert_eq!(tr.from, None, "slide 0 transitions from black (None)");
     assert_eq!(tr.dur, 0.5);
 }
+
+/// A finger drag across the slide turns the page: left for the next slide, right for the
+/// previous one. A tap, a short drag and a mostly vertical drag do not.
+#[test]
+fn a_swipe_turns_the_page() {
+    assert_eq!(ui::swipe_direction(vec2(-120.0, 10.0)), Some(true));
+    assert_eq!(ui::swipe_direction(vec2(120.0, -10.0)), Some(false));
+    assert_eq!(ui::swipe_direction(vec2(0.0, 0.0)), None, "a tap");
+    assert_eq!(ui::swipe_direction(vec2(-30.0, 0.0)), None, "a short drag");
+    assert_eq!(ui::swipe_direction(vec2(-100.0, 90.0)), None, "mostly vertical");
+
+    let mut session = deckcraft_engine::Session::new();
+    deckcraft_engine::sample::open_sample(&mut session).expect("sample deck opens");
+    let mut app = SlideApp::new(session, crate::Services::default());
+    app.ui.presenter_view = false;
+    let mut harness = egui_kittest::Harness::builder().with_size(vec2(390.0, 800.0)).with_step_dt(0.5).build_ui_state(
+        |ui, app: &mut SlideApp| {
+            app.logic(ui.ctx());
+            app.ui(ui);
+        },
+        app,
+    );
+    harness.run_steps(3);
+    harness.state_mut().start_show(0, false);
+    harness.run_steps(2);
+    let slide = |h: &egui_kittest::Harness<'static, SlideApp>| h.state().show.as_ref().map(|s| s.state.slide);
+    let drag = |h: &mut egui_kittest::Harness<'static, SlideApp>, from: Pos2, to: Pos2| {
+        h.event(egui::Event::PointerMoved(from));
+        h.step();
+        h.event(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+        h.step();
+        h.event(egui::Event::PointerMoved(to));
+        h.step();
+        h.event(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+        h.step();
+        h.run_steps(2);
+    };
+    assert_eq!(slide(&harness), Some(0));
+    drag(&mut harness, pos2(300.0, 400.0), pos2(120.0, 410.0));
+    assert_eq!(slide(&harness), Some(1), "a drag left goes to the next slide");
+    drag(&mut harness, pos2(100.0, 400.0), pos2(300.0, 395.0));
+    assert_eq!(slide(&harness), Some(0), "a drag right goes back");
+}

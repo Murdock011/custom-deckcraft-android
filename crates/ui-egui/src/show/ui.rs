@@ -314,8 +314,13 @@ fn handle_wheel_and_swipe(show: &mut Show, f: &Fr, out: &mut Out) {
     }
     // A trackpad swipe (and the mouse wheel) turns the page. The pen is drawing, so a flick
     // there stays on the slide. Pinch zoom is not a show gesture.
-    if !show.pen
-        && let Some(next) = crate::canvas::page_flick(ctx.input(|i| i.smooth_scroll_delta))
+    // A finger swipe is a pointer drag, not a scroll: a drag left turns to the next slide and a
+    // drag right to the previous one. It is read every frame so a drag started under the pen,
+    // zoom or the slide grid is not taken as a swipe when it ends.
+    let swipe = touch_swipe(ctx);
+    let swipe = if show.pen || show.laser || show.grid || show.zoom.is_some() || show.zoom_arm { None } else { swipe };
+    let flick = if show.pen { None } else { crate::canvas::page_flick(ctx.input(|i| i.smooth_scroll_delta)) };
+    if let Some(next) = flick.or(swipe)
         && now - show.last_swipe > 0.35
     {
         show.last_swipe = now;
@@ -330,6 +335,31 @@ fn handle_wheel_and_swipe(show: &mut Show, f: &Fr, out: &mut Out) {
             out.actions.push(show.state.prev(doc));
         }
     }
+}
+
+/// The shortest drag, in points, that counts as a swipe. Shorter ones are taps that wobbled.
+const SWIPE_MIN: f32 = 64.0;
+
+/// Which way a drag of `d` turns the page: `Some(true)` for the next slide (a drag left),
+/// `Some(false)` for the previous one (a drag right), `None` for a tap, a short drag or a drag
+/// that is more up or down than across.
+pub(crate) fn swipe_direction(d: egui::Vec2) -> Option<bool> {
+    (d.x.abs() >= SWIPE_MIN && d.x.abs() > 2.0 * d.y.abs()).then_some(d.x < 0.0)
+}
+
+/// Follows the primary button from press to release and gives the swipe it made, if any.
+fn touch_swipe(ctx: &egui::Context) -> Option<bool> {
+    let key = egui::Id::unique("show_swipe_start");
+    let (pressed, released, pos) = ctx.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_released(), i.pointer.latest_pos()));
+    if pressed {
+        ctx.data_mut(|d| d.insert_temp(key, pos));
+        return None;
+    }
+    if !released {
+        return None;
+    }
+    let start = ctx.data_mut(|d| d.remove_temp::<Option<egui::Pos2>>(key)).flatten()?;
+    swipe_direction(pos? - start)
 }
 
 fn advance(app: &mut SlideApp, show: &mut Show, f: &Fr, out: &mut Out) {

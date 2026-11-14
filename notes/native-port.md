@@ -30,10 +30,25 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - Recovery: the engine's AutoRecover folder is in the app's private files. On pause the host
   writes the last snapshot from the JNI thread, with no frame.
 
+## Phone sheets (added after the first build)
+
+- `phone_sheet.rs`: a bottom tab bar (Slides, Insert, Text, Shape, Edit, More) opens one sheet of
+  tiles above it. The sheet sits in the layout, so the slide stays visible. At most 42% of the
+  window height; longer sheets scroll. Formatting tiles keep it open; insert and dialog tiles
+  close it. Tiles that need a selection are greyed, with a one-line hint.
+- All touch targets are at least 48 pt (tiles 68 pt tall, swatches 48 pt); a compile-time check
+  covers the constants.
+- Back (Escape) closes an open sheet, and ends a slide show. `can_go_back` reports both.
+- Slide show: a finger swipe left or right turns the page (`show/ui.rs`, `swipe_direction`).
+- Not run on a device. Tests cover tile command ids, dialog ids, tab toggling, Back, and a draw at
+  phone width. `DECKCRAFT_SHOT_DIR=… cargo test -p deckcraft-ui-egui --lib sheet_screenshots`
+  writes a PNG of each sheet (needs a Vulkan driver such as lavapipe).
+
 ## Open
 
 - Run it on an emulator and a phone, and fix what breaks.
 - Switch the keyboard to `Event::Ime` (Deck's IME handling already exists); check that the reset
   phase is acknowledged when Android skips `set_ime_allowed`.
-- Format and Insert sheets, slide thumbnails, Paste button, pinch zoom, slide show touch controls.
+- Slide thumbnails (the chips show numbers only), pinch zoom on a device, show controls for pen
+  and laser by touch.
 - File ▸ Close does not end the activity.

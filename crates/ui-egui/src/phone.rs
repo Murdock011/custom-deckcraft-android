@@ -8,6 +8,7 @@ use serde_json::json;
 
 use crate::SlideApp;
 use crate::icons::{self, Icon};
+use crate::phone_sheet;
 use crate::theme::{self, Tokens};
 
 /// Windows narrower than this (points) get the phone layout. A phone held upright is about 390 pt.
@@ -69,14 +70,17 @@ pub fn top_bar(app: &mut SlideApp, ui: &mut Ui) {
     });
 }
 
-/// The bottom: a scrolling row of slide chips (tap to go to a slide), then the toolbar of the
-/// commands a phone needs most often.
+/// The bottom, from the screen edge up: the tab bar, the open sheet (if any), then a scrolling
+/// row of slide chips (tap to go to a slide). The sheet sits above the tabs and below the chips,
+/// so slide navigation stays in reach while it is open.
 pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some((count, current)) = app.session.active().map(|d| (d.doc.slides.len(), d.selection.slide)) else { return };
-    egui::Panel::bottom("phone_bottom").exact_size(TOUCH_H * 2.0 + 8.0).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+    phone_sheet::tab_bar(app, ui);
+    phone_sheet::show(app, ui);
+    egui::Panel::bottom("phone_chips").exact_size(TOUCH_H + 8.0).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
         egui::ScrollArea::horizontal().id_salt("phone_chips").auto_shrink([false, true]).show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 for i in 0..count {
                     if slide_chip(ui, i, i == current).clicked() {
@@ -84,24 +88,6 @@ pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
                     }
                 }
             });
-        });
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            let each = ui.available_width() / 6.0;
-            ui.spacing_mut().item_spacing.x = (each - TOUCH_H).max(0.0);
-            let tools: [(Icon, &str, &str); 6] = [
-                (Icon::NewSlide, "New slide", "slide.new"),
-                (Icon::TextBox, "Text box", "insert.textBox"),
-                (Icon::Bold, "Bold", "format.bold"),
-                (Icon::Italic, "Italic", "format.italic"),
-                (Icon::Underline, "Underline", "format.underline"),
-                (Icon::DuplicateSlide, "Duplicate slide", "slide.duplicate"),
-            ];
-            for (icon, label, id) in tools {
-                if icon_button(ui, icon, label, true, false).clicked() {
-                    let _ = app.run(id, json!({}));
-                }
-            }
         });
     });
 }
