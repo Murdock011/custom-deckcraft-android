@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.hardware.display.DisplayManager
 import android.content.res.Configuration
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -191,6 +192,8 @@ class MainActivity : GameActivity() {
                 handler.postDelayed({ android.os.Process.killProcess(android.os.Process.myPid()) }, 300)
                 return
             }
+            // How many screens are connected: Presenter View needs a second one (a phone has one).
+            nativeSetDisplays((getSystemService(Context.DISPLAY_SERVICE) as DisplayManager).displays.size)
             // A slide show is wider than tall: turn the screen sideways for it, and hand the choice back after.
             val presenting = nativeIsPresenting()
             if (presenting != wasPresenting) {
@@ -631,6 +634,7 @@ class MainActivity : GameActivity() {
     private external fun nativeContext(): String
     private external fun nativeResetRequest(): String
     private external fun nativeIsPresenting(): Boolean
+    private external fun nativeSetDisplays(count: Int)
 
     /** Whether Android Back has a sheet, menu or Backstage to close. */
     private external fun nativeCanGoBack(): Boolean

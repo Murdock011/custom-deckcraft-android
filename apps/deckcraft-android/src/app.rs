@@ -64,6 +64,8 @@ impl Shell {
             open_async: Some(Box::new(|purpose: &str, id: u64| files::request_open(purpose, id))),
             inbox: Some(inbox.clone()),
             download: Some(Box::new(|name: &str, bytes: &[u8]| files::save(name, bytes))),
+            // One screen: the slide show is the plain full-window view. A second display allows Presenter View.
+            displays: Some(Box::new(ime::display_count)),
             ..Default::default()
         };
         let mut app = SlideApp::new(Session::new(), services);

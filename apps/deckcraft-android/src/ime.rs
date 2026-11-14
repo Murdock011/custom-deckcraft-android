@@ -11,7 +11,7 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
 
 /// One message from the keyboard. `kind` in the JNI export: 0 commit, 1 composing text,
 /// 2 finish composing, 3 delete around the caret, 4 key press, 5 composing region, 6 reset done.
@@ -57,6 +57,19 @@ pub static CAN_GO_BACK: AtomicBool = AtomicBool::new(false);
 pub static GPU_FAILED: AtomicBool = AtomicBool::new(false);
 /// Whether eframe has run the first `ui` call, i.e. the window surface was set up (see `android::gpu_setup`).
 pub static UI_STARTED: AtomicBool = AtomicBool::new(false);
+/// How many displays Android reports (set by Kotlin; 1 until it says). Presenter View needs a second one.
+static DISPLAYS: AtomicUsize = AtomicUsize::new(1);
+
+/// Records the number of connected displays (Kotlin polls it, so a cast or desk mode connecting later counts).
+pub fn set_displays(n: usize) {
+    DISPLAYS.store(n.max(1), Ordering::Relaxed);
+}
+
+/// The display count the engine asks for (`Services::displays`).
+pub fn display_count() -> Option<usize> {
+    Some(DISPLAYS.load(Ordering::Relaxed))
+}
+
 /// Whether a slide show is running (`SlideApp::show`). Kotlin turns the screen to landscape while it is.
 pub static PRESENTING: AtomicBool = AtomicBool::new(false);
 /// The system's night mode, from Kotlin.
@@ -282,6 +295,18 @@ mod tests {
         assert_eq!(encode(7, &c), "7\u{1}1\u{1}0\u{1}1\u{1}a\u{1}b");
         let none = Context { text: "x".into(), caret: 0, composing: None };
         assert_eq!(encode(0, &none), "0\u{1}0\u{1}-1\u{1}-1\u{1}x");
+    }
+
+    /// A phone has one display unless Android says otherwise, so a slide show is the plain full-window view;
+    /// with a second display connected the engine may open Presenter View.
+    #[test]
+    fn one_display_until_android_reports_more() {
+        assert_eq!(display_count(), Some(1), "the default is one display");
+        set_displays(2);
+        assert_eq!(display_count(), Some(2));
+        set_displays(0);
+        assert_eq!(display_count(), Some(1), "never fewer than the one we are drawn on");
+        set_displays(1);
     }
 
     #[test]

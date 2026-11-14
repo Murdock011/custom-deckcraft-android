@@ -155,6 +155,18 @@ pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nati
     env.with_env(|env| env.new_string(ime::take_reset())).resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
+/// How many displays Android reports (`DisplayManager`). Presenter View needs a second one; with one the show is the
+/// plain full-window view. Kotlin sends it every poll.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nativeSetDisplays<'local>(
+    _env: EnvUnowned<'local>,
+    _this: JObject<'local>,
+    count: jint,
+) {
+    ime::set_displays(count.max(1) as usize);
+}
+
 /// Whether a slide show is running. Kotlin polls it and turns the screen to landscape for the show.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
