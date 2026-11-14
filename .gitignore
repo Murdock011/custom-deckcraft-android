@@ -1,0 +1,21 @@
+*~
+plan/
+/target
+/target-*/
+/dist
+/corpus
+/log
+.DS_Store
+/.claude/
+/craft-fonts/
+packaging/env.sh
+/packaging/linux/flatpak/cargo-sources.json
+/build-flatpak/
+/.flatpak-builder/
+
+# Android build output
+/packaging/android-native/.gradle/
+/packaging/android-native/.kotlin/
+/packaging/android-native/local.properties
+/packaging/android-native/app/build/
+/packaging/android-native/app/src/main/jniLibs/
