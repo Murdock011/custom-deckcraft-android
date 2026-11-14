@@ -1977,3 +1977,22 @@ fn close_new_then_edit_before_a_pass_keeps_the_old_terminal_fence_until_exact_re
     assert_eq!(title_text(h.state()), format!("{before}F"));
     assert_eq!(undo_len(h.state()), undo + 1, "only the latest new composition is one undo step");
 }
+
+/// A host with no native completion signal (Android) reads the pending reset from the app, restarts
+/// its keyboard and answers: `pending_ime_reset` shows the id while the fence is up and nothing
+/// once the exact completion has arrived. Without it the keyboard stays blocked after a tap that
+/// ends a composition.
+#[test]
+fn a_host_can_read_the_pending_reset_and_acknowledge_it() {
+    let mut h = harness(Session::with_new());
+    assert_eq!(h.state().pending_ime_reset(egui::ViewportId::ROOT), None, "nothing is waiting at the start");
+    let id = settled_title_reset(&mut h);
+    assert_eq!(h.state().pending_ime_reset(egui::ViewportId::ROOT), Some(id), "the host sees the id egui waits on");
+    assert_eq!(h.state().pending_ime_reset(egui::ViewportId(egui::Id::unique("another window"))), None, "a reset belongs to its own viewport");
+    h.input_mut().events.push(reset_completed(id));
+    h.run_steps(1);
+    assert_eq!(h.state().pending_ime_reset(egui::ViewportId::ROOT), None, "the exact completion clears it");
+    h.input_mut().events.push(preedit("Q"));
+    h.run_steps(1);
+    assert_eq!(title_text(h.state()), "日Q", "and input is accepted again");
+}

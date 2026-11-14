@@ -59,11 +59,10 @@ emulator.
 
 ## Known gaps
 
-- Not built, installed or tried on an emulator or a phone yet.
-- The soft keyboard types through plain text events. Tapping a suggestion over a word already in
-  the text does not replace it.
-- No Format or Insert sheets, no slide thumbnails, no Paste button, no pinch to zoom, and no touch
-  controls for the slide show.
+- Built as an arm64 debug APK, but not yet tried on an emulator or a phone. Expect bugs.
+- The soft keyboard bridge is new and has only been tested on the desktop. Suggestions are still
+  turned off until typing is confirmed on a device.
+- Pen and laser have no touch controls in the slide show.
 - File ▸ Close does not end the app.
 
 Work in progress is logged step by step in [notes/native-port.md](notes/native-port.md).

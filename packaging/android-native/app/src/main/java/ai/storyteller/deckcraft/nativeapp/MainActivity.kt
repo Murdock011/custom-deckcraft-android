@@ -57,10 +57,6 @@ class MainActivity : GameActivity() {
     private var ctxCaret = 0
     private var ctxComp = -1
     private var ctxCompEnd = -1
-    /** The last target Rust reported (`ime::TARGET`); -1 until the first pull, and after a keyboard show. */
-    private var ctxTarget = -1L
-    /** Set by Enter or Tab, which moves the target itself: the next target change is that move, and does not restart. */
-    private var pendingTargetBump = false
 
     /** Messages sent to Rust. A context from Rust is taken only once Rust has read them all. */
     private var sent = 0L
@@ -73,27 +69,38 @@ class MainActivity : GameActivity() {
     /** Takes Rust's context when it has read every message sent (its count matches [sent]). */
     private fun pullContext() {
         val raw = nativeContext()
-        val f = raw.split('\u0001', limit = 6)
-        if (f.size < 6 || f[0].toLongOrNull() != sent) return
-        val target = f[4].toLongOrNull() ?: return
-        // Same target: keep this side's copy (edit() keeps it right, and Rust's copy is empty). Gboard and this copy
-        // then agree, so the caps and the composition stay right. A new target (Enter moved on, a tap): take
-        // Rust's view once and restart the keyboard on it.
-        if (target == ctxTarget) return
-        ctxTarget = target
-        // The move Enter or Tab made already started the keyboard over (movedOn): nothing more to do.
-        if (pendingTargetBump) {
-            pendingTargetBump = false
-            return
+        val f = raw.split('\u0001', limit = 5)
+        if (f.size < 5 || f[0].toLongOrNull() != sent) return
+        ctxCaret = f[1].toIntOrNull() ?: return
+        val comp = f[2].toIntOrNull() ?: -1
+        // Rust dropped the composition (the caret moved away from it, or the words were not where the
+        // keyboard thought): the keyboard still has its composing span, so restart the input to make it
+        // drop that span too. Posted, so this never runs inside onCreateInputConnection.
+        if (ctxComp >= 0 && comp < 0) {
+            imeView.post {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.restartInput(imeView)
+            }
         }
-        ctxCaret = f[1].toIntOrNull() ?: 0
-        ctxComp = f[2].toIntOrNull() ?: -1
+        ctxComp = comp
         ctxCompEnd = f[3].toIntOrNull() ?: -1
-        ctxText = f[5]
-        imeView.post {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.restartInput(imeView)
-        }
+        ctxText = f[4]
+    }
+
+    /**
+     * egui asked for a reset of the input method (a tap or key press during a composition) and waits for
+     * the platform to say it is done. Android says nothing, so this restarts the input and answers.
+     * Messages sent before the answer are stale and Rust refuses them; those after it are new. That
+     * order is the acknowledgement egui needs.
+     */
+    private fun answerReset() {
+        val id = nativeResetRequest()
+        if (id.isEmpty()) return
+        ctxComp = -1
+        ctxCompEnd = -1
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.restartInput(imeView)
+        send(6, id, 0, 0)
     }
 
     /**
@@ -105,7 +112,6 @@ class MainActivity : GameActivity() {
         ctxCaret = 0
         ctxComp = -1
         ctxCompEnd = -1
-        pendingTargetBump = true
         imeView.post {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.restartInput(imeView)
@@ -184,7 +190,10 @@ class MainActivity : GameActivity() {
             }
             // After a resume the keyboard stays down unless the document was being edited or the user taps.
             val want = nativeWantsKeyboard() && (!resumeHold || nativeCanvasEditing())
-            if (want) pullContext()
+            if (want) {
+                answerReset()
+                pullContext()
+            }
             if (want != keyboardShown) {
                 keyboardShown = want
                 if (want) showKeyboard() else hideKeyboard()
@@ -525,7 +534,6 @@ class MainActivity : GameActivity() {
 
     private fun showKeyboard() {
         // The keyboard comes up on the current text: the copy from before it went down may be stale.
-        ctxTarget = -1L
         pullContext()
         imeView.requestFocus()
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -582,6 +590,7 @@ class MainActivity : GameActivity() {
 
     /** The text around the caret for the input method: ack, caret, composing start and end, text. */
     private external fun nativeContext(): String
+    private external fun nativeResetRequest(): String
 
     /** Whether Android Back has a sheet, menu or Backstage to close. */
     private external fun nativeCanGoBack(): Boolean
@@ -632,9 +641,16 @@ class MainActivity : GameActivity() {
         }
 
         override fun setComposingRegion(start: Int, end: Int): Boolean {
-            // Rust cannot re-compose words already in the text yet, so the region is not adopted: marking it here
-            // while Rust holds no composition made the next composing text land after the word instead of
-            // replacing it, and a message Rust never counted stopped the context pulls for the rest of the run.
+            // Words already in the text the keyboard wants to replace (a suggestion tapped over a word).
+            // Rust marks them as the composition if they are where the keyboard says; if not, its next
+            // context has no composition and pullContext restarts the input.
+            val lo = minOf(start, end).coerceIn(0, ctxText.length)
+            val hi = maxOf(start, end).coerceIn(0, ctxText.length)
+            if (lo < hi) {
+                ctxComp = lo
+                ctxCompEnd = hi
+                send(5, "", lo, hi)
+            }
             return true
         }
 

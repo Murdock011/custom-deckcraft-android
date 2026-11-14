@@ -1,8 +1,12 @@
 //! Text from the soft keyboard. `MainActivity.kt`'s ImeView pushes what the keyboard sent (through
 //! the JNI exports in `android.rs`); `app.rs` turns it into egui events on the next frame.
 //!
-//! The editing context Kotlin reads back is the text around the caret of the edit when the keyboard's target
-//! changes (`retarget`); Kotlin then keeps its own copy until the next target change. See `notes/native-port.md`.
+//! The editing context Kotlin reads back is the text around the caret, published every frame from egui's
+//! IME output (`publish_context`). Kotlin takes it only once Rust has read every message it sent (the
+//! count in its first field), and keeps its own copy in between. `keyboard.rs` turns the messages into
+//! egui IME events. Offsets from the keyboard are UTF-16 units; the helpers below convert them to bytes
+//! and refuse offsets that are past the end or split a surrogate pair (they come from outside, so they
+//! are hostile). See `notes/native-port.md`.
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -10,28 +14,36 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 
 /// One message from the keyboard. `kind` in the JNI export: 0 commit, 1 composing text,
-/// 2 finish composing, 3 delete around the caret, 4 key press, 5 composing region (ignored).
+/// 2 finish composing, 3 delete around the caret, 4 key press, 5 composing region, 6 reset done.
 #[derive(Debug, PartialEq)]
 pub enum Msg {
     Commit(String),
     Compose(String),
     Finish,
-    Delete { before: usize, after: usize },
+    Delete {
+        before: usize,
+        after: usize,
+    },
     Key(i32),
+    /// `setComposingRegion`: UTF-16 offsets into the context text (`start..end`).
+    Region {
+        start: usize,
+        end: usize,
+    },
+    /// Kotlin restarted the input method for reset request `n` (`take_reset`): the acknowledgement
+    /// egui waits for before it accepts keyboard input again.
+    ResetDone(u64),
 }
 
 static QUEUE: Mutex<VecDeque<Msg>> = Mutex::new(VecDeque::new());
 /// Messages Rust has taken so far. Kotlin only trusts the context when this matches its own count.
 static TAKEN: AtomicU64 = AtomicU64::new(0);
 
-/// Changes whenever the keyboard's target changes (the edited text changed, or another slide or presentation came up).
-/// Kotlin starts its copy of the text over on a change; it keeps its own copy in between (see `context`).
-/// Bumped only by `retarget`, under the `SEED` lock.
-static TARGET: AtomicU64 = AtomicU64::new(0);
-/// The text Kotlin starts from on a target change, and its caret in UTF-16 units. Set by `retarget`.
-static SEED: Mutex<(String, usize)> = Mutex::new((String::new(), 0));
-/// Characters kept either side of the caret in the seed; longer text is clipped around the caret.
-const SEED_SIDE: usize = 200;
+/// The context the input method reads (see `encode`), written every frame.
+static CONTEXT: Mutex<String> = Mutex::new(String::new());
+/// The id of the IME reset egui is waiting on (0 for none). Kotlin takes it (`take_reset`), restarts the
+/// input method, and answers with `Msg::ResetDone`.
+static RESET: AtomicU64 = AtomicU64::new(0);
 /// Whether egui wants the soft keyboard (a text position has focus). Kotlin polls it.
 pub static WANTS_KEYBOARD: AtomicBool = AtomicBool::new(false);
 /// Set by Enter or Tab from the keyboard, so it stays up for the next line; cleared by a touch, a scroll, or Escape.
@@ -81,32 +93,141 @@ pub fn pop() -> Option<Msg> {
     Some(m)
 }
 
-/// Moves the keyboard to a new target: `text` is what the edit holds (empty when typing will replace the selection),
-/// `caret` its caret in characters. Kotlin starts its copy from this on the next pull.
-pub fn retarget(text: &str, caret: usize) {
-    let caret = caret.min(text.chars().count());
-    let start = caret.saturating_sub(SEED_SIDE);
-    let end = (caret + SEED_SIDE).min(text.chars().count());
-    let chars: Vec<char> = text.chars().collect();
-    let clean = |cs: &[char]| cs.iter().map(|c| if *c == '\u{1}' { ' ' } else { *c }).collect::<String>();
-    let before = clean(&chars[start..caret]);
-    let seed = (format!("{before}{}", clean(&chars[caret..end])), before.encode_utf16().count());
-    let mut s = SEED.lock().unwrap_or_else(|e| e.into_inner());
-    *s = seed;
-    TARGET.fetch_add(1, Ordering::Relaxed);
+/// Messages Rust has taken so far (the first field of the context).
+pub fn taken() -> u64 {
+    TAKEN.load(Ordering::Relaxed)
 }
 
-/// What Kotlin reads: the number of messages taken, caret (UTF-16 units), composing start and end (-1 for none),
-/// the target counter (`TARGET`), then the text around the caret, U+0001 separated. The text and caret are the
-/// seed from `retarget`; Kotlin keeps its own copy while the target stays the same.
-pub fn context() -> String {
-    let seed = SEED.lock().unwrap_or_else(|e| e.into_inner());
-    format!("{}\u{1}{}\u{1}-1\u{1}-1\u{1}{}\u{1}{}", TAKEN.load(Ordering::Relaxed), seed.1, TARGET.load(Ordering::Relaxed), seed.0)
+/// Stores the encoded context for Kotlin to read (`context_text`).
+pub fn publish_context(encoded: String) {
+    if let Ok(mut c) = CONTEXT.lock() {
+        *c = encoded;
+    }
+}
+
+/// The last published context, for Kotlin (empty until the first frame).
+pub fn context_text() -> String {
+    CONTEXT.lock().map(|c| c.clone()).unwrap_or_default()
+}
+
+/// Asks Kotlin to restart the input method for reset request `id` (egui's `ImeResetId`).
+pub fn request_reset(id: u64) {
+    RESET.store(id, Ordering::Relaxed);
+    wake();
+}
+
+/// The reset request Kotlin has not seen yet, once ("" when none).
+pub fn take_reset() -> String {
+    match RESET.swap(0, Ordering::Relaxed) {
+        0 => String::new(),
+        id => id.to_string(),
+    }
+}
+
+/// UTF-16 length of `s`.
+pub fn utf16_len(s: &str) -> usize {
+    s.encode_utf16().count()
+}
+
+/// The byte offset in `text` of the UTF-16 offset `units`, or `None` when it is past the end or
+/// falls inside a surrogate pair.
+pub fn byte_at_utf16(text: &str, units: usize) -> Option<usize> {
+    let mut u = 0usize;
+    for (b, c) in text.char_indices() {
+        if u == units {
+            return Some(b);
+        }
+        u = u.checked_add(c.len_utf16())?;
+        if u > units {
+            return None;
+        }
+    }
+    (u == units).then_some(text.len())
+}
+
+/// The UTF-16 offset of byte `byte` in `text` (0 when `byte` is not a boundary).
+pub fn utf16_at_byte(text: &str, byte: usize) -> usize {
+    text.get(..byte).map_or(0, utf16_len)
+}
+
+/// A span of document text the input method is composing. The text stays in the document; the
+/// span only marks it, so nothing is held outside the document. Offsets are bytes in the paragraph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    /// Where the span starts in the paragraph.
+    pub start: usize,
+    /// The caret, where the input method left it (inside `start..end`).
+    pub caret: usize,
+    /// The text of the span, as the document holds it.
+    pub text: String,
+}
+
+impl Span {
+    pub fn end(&self) -> usize {
+        self.start.saturating_add(self.text.len())
+    }
+
+    /// Chars before and after the caret inside the span: what erasing the span takes.
+    pub fn erase_counts(&self) -> (usize, usize) {
+        let rel = self.caret.saturating_sub(self.start);
+        let head = self.text.get(..rel).unwrap_or("");
+        let tail = self.text.get(rel..).unwrap_or("");
+        (head.chars().count(), tail.chars().count())
+    }
+}
+
+/// Whether `span` still holds in `para` with the caret at `caret`: the text is still there, and the
+/// caret has not moved since the span was last read.
+pub fn holds(span: &Span, para: &str, caret: usize) -> bool {
+    caret == span.caret
+        && span.caret >= span.start
+        && span.caret <= span.end()
+        && para.is_char_boundary(caret)
+        && para.get(span.start..span.end()) == Some(span.text.as_str())
+}
+
+/// The composing region `start..end` (UTF-16, in `para`) the input method set over text. The words
+/// stay where they are, marked as the composition, with the caret inside them. `None` when the
+/// offsets are invalid, the caret is outside them, or the region is empty.
+pub fn region_span(para: &str, caret: usize, start: usize, end: usize) -> Option<Span> {
+    let (s, e) = (start.min(end), start.max(end));
+    let sb = byte_at_utf16(para, s)?;
+    let eb = byte_at_utf16(para, e)?;
+    if sb == eb || !para.is_char_boundary(caret) || caret < sb || caret > eb {
+        return None;
+    }
+    Some(Span { start: sb, caret, text: para.get(sb..eb)?.to_string() })
+}
+
+/// What the input method reads: the paragraph, the caret and the composing span, in UTF-16 units.
+/// `composing` is `None` without a span.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Context {
+    pub text: String,
+    pub caret: usize,
+    pub composing: Option<(usize, usize)>,
+}
+
+/// The context around the caret at byte `caret` of `para`. `None` when `caret` is not a character
+/// boundary of `para`.
+pub fn context(para: &str, caret: usize, span: Option<&Span>) -> Option<Context> {
+    if !para.is_char_boundary(caret) {
+        return None;
+    }
+    let composing = span.map(|s| (utf16_at_byte(para, s.start), utf16_at_byte(para, s.end())));
+    Some(Context { text: para.to_string(), caret: utf16_at_byte(para, caret), composing })
+}
+
+/// One context line for Kotlin: `ack`, caret, composing start and end (-1 for none), then the text.
+/// Fields are split by U+0001, and the text comes last so it may contain anything else.
+pub fn encode(ack: u64, c: &Context) -> String {
+    let (s, e) = c.composing.map_or((-1, -1), |(s, e)| (s as i64, e as i64));
+    format!("{ack}\u{1}{}\u{1}{s}\u{1}{e}\u{1}{}", c.caret, c.text)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{context, ime_lines, retarget};
+    use super::*;
 
     #[test]
     fn commit_newlines_split_into_lines() {
@@ -116,18 +237,56 @@ mod tests {
         assert_eq!(ime_lines("\n"), ["", ""]);
     }
 
-    /// The seed is the text and caret in UTF-16 units (an emoji is two), and long text is clipped around the caret.
     #[test]
-    fn retarget_seeds_text_and_utf16_caret() {
-        let field = |c: &str| c.split('\u{1}').map(str::to_string).collect::<Vec<_>>();
-        retarget("Plan", 4);
-        let f = field(&context());
-        assert_eq!((f[1].as_str(), f[5].as_str()), ("4", "Plan"));
-        retarget("a\u{1f600}b", 2);
-        let f = field(&context());
-        assert_eq!((f[1].as_str(), f[5].as_str()), ("3", "a\u{1f600}b"));
-        retarget(&"x".repeat(500), 300);
-        let f = field(&context());
-        assert_eq!((f[1].as_str(), f[5].len()), ("200", 400));
+    fn utf16_offsets_map_over_accents_and_emoji() {
+        // "a" 1 unit, "é" 1 unit (2 bytes), "😀" 2 units (surrogate pair, 4 bytes), "b" 1 unit.
+        let t = "aé😀b";
+        assert_eq!(utf16_len(t), 5);
+        assert_eq!(byte_at_utf16(t, 0), Some(0));
+        assert_eq!(byte_at_utf16(t, 2), Some(3));
+        assert_eq!(byte_at_utf16(t, 3), None, "inside the surrogate pair");
+        assert_eq!(byte_at_utf16(t, 4), Some(7));
+        assert_eq!(byte_at_utf16(t, 5), Some(8), "the end");
+        assert_eq!(byte_at_utf16(t, 6), None, "past the end");
+        assert_eq!(utf16_at_byte(t, 3), 2);
+        assert_eq!(utf16_at_byte(t, 2), 0, "not a boundary");
+    }
+
+    #[test]
+    fn a_region_marks_words_in_place_and_refuses_hostile_offsets() {
+        let s = region_span("say helo", 8, 4, 8).expect("a region");
+        assert_eq!((s.start, s.text.as_str()), (4, "helo"));
+        assert_eq!(s.erase_counts(), (4, 0));
+        assert!(region_span("say helo", 8, 8, 8).is_none(), "empty");
+        assert!(region_span("say helo", 2, 4, 8).is_none(), "the caret is outside it");
+        assert!(region_span("say helo", 8, 4, 99).is_none(), "past the end");
+        assert!(region_span("a😀", 5, 1, 2).is_none(), "splits a surrogate pair");
+        assert_eq!(region_span("héllo", 3, 1, 2).map(|s| s.text), Some("é".to_string()), "units 1..2 are the é, bytes 1..3");
+        assert!(region_span("héllo", 2, 1, 2).is_none(), "a caret inside the é");
+    }
+
+    #[test]
+    fn a_span_holds_only_while_its_text_and_caret_are_where_they_were() {
+        let s = region_span("say helo", 8, 4, 8).expect("a region");
+        assert!(holds(&s, "say helo", 8));
+        assert!(!holds(&s, "say helo", 7), "the caret moved");
+        assert!(!holds(&s, "say hall", 8), "the text changed");
+        assert!(!holds(&s, "say", 8), "the text is gone");
+    }
+
+    #[test]
+    fn the_encoded_context_keeps_the_text_last() {
+        let c = Context { text: "a\u{1}b".into(), caret: 1, composing: Some((0, 1)) };
+        assert_eq!(encode(7, &c), "7\u{1}1\u{1}0\u{1}1\u{1}a\u{1}b");
+        let none = Context { text: "x".into(), caret: 0, composing: None };
+        assert_eq!(encode(0, &none), "0\u{1}0\u{1}-1\u{1}-1\u{1}x");
+    }
+
+    #[test]
+    fn a_reset_request_is_taken_once() {
+        assert_eq!(take_reset(), "");
+        request_reset(41);
+        assert_eq!(take_reset(), "41");
+        assert_eq!(take_reset(), "", "seen only once");
     }
 }

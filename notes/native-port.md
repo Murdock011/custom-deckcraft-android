@@ -21,8 +21,17 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 
 ## Adaptations
 
-- Soft keyboard: committed text becomes `egui::Event::Text`; composing text is replaced as it
-  changes; Delete and key codes become key presses. Kotlin does not send composing regions.
+- Soft keyboard: the host sends real input-method events (`Event::Ime`) and the editor owns the
+  composition. `keyboard.rs` translates the messages: composing text is a `Preedit`, a commit is a
+  `Commit`, a delete is `DeleteSurrounding`, and finishing commits what was composed (it never
+  cancels it). A key press commits the composition first. `setComposingRegion` marks words already in
+  the text, so a suggestion tapped over a word replaces it once. The context Kotlin reads (text,
+  caret, composition) is published every frame from egui's IME output; Kotlin takes it only when
+  Rust has read all its messages.
+- Reset: a tap or key during a composition makes egui wait for the platform to acknowledge an
+  input-method reset, and Android never does. The host reads the id (`pending_ime_reset`), Kotlin
+  restarts the input and answers with message kind 6, and the host sends `ImeResetCompleted`.
+  Without this the keyboard goes dead after the first such tap.
 - Files: the picker's answer carries the request id the UI gave (`Services::open_async`). A
   dismissed picker cancels it. Files handed over by other apps open as dropped files.
 - Save: the system dialog or a write back to the opened document. A finished save marks the
@@ -47,8 +56,9 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 ## Open
 
 - Run it on an emulator and a phone, and fix what breaks.
-- Switch the keyboard to `Event::Ime` (Deck's IME handling already exists); check that the reset
-  phase is acknowledged when Android skips `set_ime_allowed`.
+- Check the keyboard on a device: typing, suggestions over a word, Enter and Tab, and the first tap
+  after a composition (the reset). Once that works, switch the input type from `NO_SUGGESTIONS` to
+  auto-correct. Host tests cover the translator; Kotlin and Gboard are not tested.
 - Pinch zoom on a device, show controls for pen
   and laser by touch.
 - File ▸ Close does not end the activity.

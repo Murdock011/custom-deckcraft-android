@@ -155,6 +155,7 @@ app's JSON control channel (`deckcraft --control PORT`).
 
 | Date | What landed |
 |---|---|
+| 2026-11-14 | Android keyboard: the host sends `Event::Ime` (new `keyboard.rs`), acknowledges egui's input-method reset, and suggestions replace the word once; slide chips show thumbnails |
 | 2026-11-14 | Android phone UI: a bottom tab bar opens touch sheets (Slides, Insert, Text, Shape, Edit, More) in `crates/ui-egui/src/phone_sheet.rs`; the slide show turns pages on a finger swipe and Back ends it; first arm64 debug APK built (not yet run on a device) |
 | 2026-11-13 | Android spike: `apps/deckcraft-android` hosts the egui UI on android-activity (system file picker, clipboard, soft-keyboard bridge, AutoRecover on pause); a window narrower than 600 pt gets the phone layout (app bar, slide chips, bottom toolbar) in `crates/ui-egui/src/phone.rs`. Gradle packaging is in `packaging/android-native`. Not built on a device or emulator yet |
 | 2026-11-11 | Media: the Opus decoder and the Ogg, MP4/MOV and Matroska demuxers are craft-audio and craft-media from craft-libs; DeckCraft's own copies and re-export crates are removed |

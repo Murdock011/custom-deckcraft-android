@@ -25,10 +25,14 @@ todo = "warn"
 too_many_arguments = "allow"
 type_complexity = "allow"
 
+# egui is a dependency on every platform: the keyboard translator (`keyboard.rs`) builds egui events
+# and its tests run on the desktop.
+[dependencies]
+egui = { workspace = true }
+
 # Everything below is Android-only, so `cargo build` on the desktop keeps building an empty library.
 [target.'cfg(target_os = "android")'.dependencies]
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "android-game-activity"] }
-egui = { workspace = true }
 deckcraft-engine = { workspace = true }
 deckcraft-ui-egui = { workspace = true }
 android_logger = "0.15"

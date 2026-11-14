@@ -16,17 +16,8 @@ use egui::{Event, Key};
 
 use crate::clip;
 use crate::files;
-use crate::ime::{self, Msg, ime_lines};
-
-/// Android KeyEvent codes the keyboard sends as key presses.
-const KEYCODE_ESCAPE: i32 = 111;
-const KEYCODE_DEL: i32 = 67;
-const KEYCODE_FORWARD_DEL: i32 = 112;
-const KEYCODE_ENTER: i32 = 66;
-const KEYCODE_TAB: i32 = 61;
-
-/// Most keys one `Delete` message may erase, so a hostile count can't flood the queue.
-const MAX_ERASE: usize = 256;
+use crate::ime;
+use crate::keyboard::{Around, Keyboard};
 
 /// The unsaved presentations as the recovery copies should hold them, refreshed whenever one changes.
 /// The pause flush (a JNI call, with no frame to wait for) writes this from its own thread.
@@ -51,9 +42,9 @@ pub struct Shell {
     app: SlideApp,
     /// Events from the keyboard, handed to egui with the next frame's input.
     pending: Vec<Event>,
-    /// The keyboard's composing text, which is replaced as the user types (see `replace_composing`).
-    composing: String,
-    /// The active presentation, slide and selection last frame; a change calls `ime::retarget`.
+    /// Turns the keyboard's messages into egui IME events and keeps what it needs between frames.
+    keyboard: Keyboard,
+    /// The presentation and text position the keyboard types into last frame; a change starts it over.
     ime_target: String,
     inbox: Inbox,
     /// The unsaved presentations as (uid, revision) when `PENDING` was last refreshed.
@@ -88,7 +79,7 @@ impl Shell {
         Shell {
             app,
             pending: Vec::new(),
-            composing: String::new(),
+            keyboard: Keyboard::default(),
             ime_target: String::new(),
             inbox,
             seen: Vec::new(),
@@ -97,67 +88,16 @@ impl Shell {
         }
     }
 
-    /// Turns the keyboard's messages into egui events for the next frame.
+    /// Turns keyboard messages into egui events for the next frame. It stops at the first message that
+    /// makes events: what the next one means depends on the text those events change, and the context
+    /// Kotlin reads is published after the frame that applied them.
     fn drain_ime(&mut self) {
         while let Some(m) = ime::pop() {
-            match m {
-                Msg::Compose(t) => self.replace_composing(&t),
-                Msg::Commit(t) => {
-                    // Gboard sends Enter as a newline in the commit text; it becomes an Enter press.
-                    for (i, line) in ime_lines(&t).into_iter().enumerate() {
-                        if i > 0 {
-                            self.composing.clear();
-                            self.press(Key::Enter);
-                        }
-                        self.replace_composing(line);
-                        self.composing.clear();
-                    }
-                }
-                Msg::Finish => self.composing.clear(),
-                Msg::Delete { before, after } => {
-                    let before = before.min(MAX_ERASE);
-                    for _ in 0..before {
-                        self.press(Key::Backspace);
-                    }
-                    for _ in 0..after.min(MAX_ERASE) {
-                        self.press(Key::Delete);
-                    }
-                    let keep = self.composing.chars().count().saturating_sub(before);
-                    self.composing = self.composing.chars().take(keep).collect();
-                }
-                Msg::Key(code) => {
-                    let key = match code {
-                        KEYCODE_ENTER => Key::Enter,
-                        KEYCODE_TAB => Key::Tab,
-                        KEYCODE_DEL => Key::Backspace,
-                        KEYCODE_FORWARD_DEL => Key::Delete,
-                        KEYCODE_ESCAPE => Key::Escape,
-                        _ => continue,
-                    };
-                    self.composing.clear();
-                    self.press(key);
-                }
+            let events = self.keyboard.handle(m);
+            if !events.is_empty() {
+                self.pending.extend(events);
+                break;
             }
-        }
-    }
-
-    /// Replaces the keyboard's composing text with `text`. Only the part after the common prefix is
-    /// erased and typed again: a keystroke that extends the word sends just the new letter.
-    fn replace_composing(&mut self, text: &str) {
-        let common = self.composing.chars().zip(text.chars()).take_while(|(a, b)| a == b).count();
-        for _ in common..self.composing.chars().count() {
-            self.press(Key::Backspace);
-        }
-        let added: String = text.chars().skip(common).collect();
-        if !added.is_empty() {
-            self.pending.push(Event::Text(added));
-        }
-        self.composing = text.to_string();
-    }
-
-    fn press(&mut self, key: Key) {
-        for pressed in [true, false] {
-            self.pending.push(Event::Key { key, physical_key: Some(key), pressed, repeat: false, modifiers: Default::default() });
         }
     }
 
@@ -289,15 +229,25 @@ impl eframe::App for Shell {
         }
         let _ = ime::WAKE.set(Box::new(move || ctx.request_repaint()));
         self.app.ui(ui);
-        // The keyboard starts over when the edit moves to another presentation.
-        let target = self.app.session.active().map(|d| d.uid.to_string()).unwrap_or_default();
+        // The keyboard starts over when the edit moves to another presentation or text position.
+        let ime_out = ctx_output_ime(ui.ctx());
+        let target = format!("{}:{}", self.app.session.active().map(|d| d.uid).unwrap_or_default(), ime_out.as_ref().map_or(0, |o| o.owner.value()));
         if target != self.ime_target {
             self.ime_target = target;
-            self.composing.clear();
-            ime::retarget("", 0);
+            self.keyboard.retarget();
         }
+        self.keyboard.set_around(ime_out.as_ref().and_then(around_of));
+        // egui waits for the platform to acknowledge a reset of the input method, and Android sends no
+        // acknowledgement itself: Kotlin restarts the keyboard and answers (`Msg::ResetDone`).
+        let reset = self.app.pending_ime_reset(ui.ctx().viewport_id());
+        if self.keyboard.on_reset_request(reset)
+            && let Some(id) = reset
+        {
+            ime::request_reset(id.as_u64());
+        }
+        ime::publish_context(ime::encode(ime::taken(), &self.keyboard.context()));
         // egui sets `output.ime` while a text position is focused: that is when the keyboard shows.
-        ime::WANTS_KEYBOARD.store(ui.ctx().output(|o| o.ime.is_some()), Ordering::Relaxed);
+        ime::WANTS_KEYBOARD.store(ime_out.is_some(), Ordering::Relaxed);
         ime::CAN_GO_BACK.store(self.app.can_go_back(), Ordering::Relaxed);
         // egui-winit has no Android clipboard; copies go to ClipboardManager through Kotlin.
         let copies: Vec<String> = ui
@@ -306,5 +256,19 @@ impl eframe::App for Shell {
         if let Some(t) = copies.into_iter().last() {
             clip::copied(t);
         }
+    }
+}
+
+/// egui's IME output for this frame, if a text position has focus.
+fn ctx_output_ime(ctx: &egui::Context) -> Option<egui::output::IMEOutput> {
+    ctx.output(|o| o.ime.clone())
+}
+
+/// The text around a collapsed caret, with the composition left out. `None` when egui offers no
+/// text (a shape that is selected but not being edited) or the selection is a range.
+fn around_of(o: &egui::output::IMEOutput) -> Option<Around> {
+    match &o.surrounding_text {
+        egui::output::IMESurroundingText::Available(p) if p.cursor == p.anchor => Some(Around { text: p.text.clone(), caret: p.cursor }),
+        _ => None,
     }
 }

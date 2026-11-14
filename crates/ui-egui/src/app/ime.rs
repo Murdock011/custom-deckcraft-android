@@ -112,6 +112,19 @@ impl SlideApp {
         self.ime_reset.get(&viewport).copied().unwrap_or(ImeResetPhase::Clear)
     }
 
+    /// The reset a host must acknowledge before IME input is accepted again, if one is waiting.
+    ///
+    /// A click, key press or change of edit target during a composition asks the platform to
+    /// reset its input method. egui drops every IME event until the host answers with
+    /// `Event::ImeResetCompleted`. A platform with no native completion signal (the Android
+    /// host) reads the id here, restarts the keyboard itself, and sends the event once that is done.
+    pub fn pending_ime_reset(&self, viewport: egui::ViewportId) -> Option<egui::ImeResetId> {
+        match self.ime_reset_for(viewport) {
+            ImeResetPhase::Awaiting { id, .. } => Some(id),
+            _ => None,
+        }
+    }
+
     /// Store a non-clear reset phase for one viewport, or remove the entry when the phase is `Clear`.
     pub(crate) fn set_ime_reset(&mut self, viewport: egui::ViewportId, phase: ImeResetPhase) {
         if matches!(phase, ImeResetPhase::Clear) {

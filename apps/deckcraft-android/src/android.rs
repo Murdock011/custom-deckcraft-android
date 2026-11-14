@@ -107,7 +107,9 @@ fn gpu_setup() -> Result<eframe::egui_wgpu::WgpuSetup, String> {
 
 /// `ImeView` -> Rust. `kind`: 0 commit, 1 composing text, 2 finish composing, 3 delete surrounding
 /// (`a` before, `b` after, in code points), 4 key press (`a` is the KeyEvent code), 5 composing
-/// region (`a`..`b`, UTF-16 offsets into the context text; Kotlin does not send it yet).
+/// region (`a`..`b`, UTF-16 offsets into the context text), 6 reset done (`text` is the id from
+/// `nativeResetRequest`). Every kind counts as one message, so the count Kotlin keeps matches the
+/// one Rust reads back; an unknown kind becomes a key press with no meaning.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nativeIme<'local>(
@@ -125,19 +127,32 @@ pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nati
         2 => Msg::Finish,
         3 => Msg::Delete { before: a.max(0) as usize, after: b.max(0) as usize },
         4 => Msg::Key(a),
-        _ => return,
+        5 => Msg::Region { start: a.max(0) as usize, end: b.max(0) as usize },
+        6 => Msg::ResetDone(text.parse().unwrap_or(0)),
+        _ => Msg::Key(-1),
     };
     ime::push(msg);
 }
 
-/// The text around the caret for the input method (see `ime::context`).
+/// The text around the caret for the input method (see `ime::encode`).
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nativeContext<'local>(
     mut env: EnvUnowned<'local>,
     _this: JObject<'local>,
 ) -> JString<'local> {
-    env.with_env(|env| env.new_string(ime::context())).resolve::<jni::errors::ThrowRuntimeExAndDefault>()
+    env.with_env(|env| env.new_string(ime::context_text())).resolve::<jni::errors::ThrowRuntimeExAndDefault>()
+}
+
+/// The id of an input-method reset egui is waiting on ("" when none; each is returned once). Kotlin restarts
+/// the input method and answers with `nativeIme` kind 6.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_storyteller_deckcraft_nativeapp_MainActivity_nativeResetRequest<'local>(
+    mut env: EnvUnowned<'local>,
+    _this: JObject<'local>,
+) -> JString<'local> {
+    env.with_env(|env| env.new_string(ime::take_reset())).resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 /// Whether egui wants the soft keyboard. Kotlin polls it to show or hide the keyboard.
