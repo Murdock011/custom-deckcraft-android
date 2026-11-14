@@ -49,6 +49,6 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - Run it on an emulator and a phone, and fix what breaks.
 - Switch the keyboard to `Event::Ime` (Deck's IME handling already exists); check that the reset
   phase is acknowledged when Android skips `set_ime_allowed`.
-- Slide thumbnails (the chips show numbers only), pinch zoom on a device, show controls for pen
+- Pinch zoom on a device, show controls for pen
   and laser by touch.
 - File ▸ Close does not end the activity.

@@ -3,7 +3,7 @@
 //! The slide keeps its canvas. Every control runs a command id, so the phone chrome adds no
 //! behaviour of its own: it is the ribbon's commands behind bigger touch targets.
 
-use egui::{Align2, Context, CornerRadius, Rect, Sense, Ui, WidgetInfo, pos2, vec2};
+use egui::{Align2, Color32, Context, CornerRadius, Rect, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 use serde_json::json;
 
 use crate::SlideApp;
@@ -17,8 +17,8 @@ pub const MAX_WIDTH: f32 = 600.0;
 pub const TOUCH_H: f32 = 48.0;
 /// Height of the top app bar.
 const APP_BAR_H: f32 = 56.0;
-/// Width of a slide chip.
-const CHIP_W: f32 = 56.0;
+/// Height of a slide chip (its thumbnail). The width follows the slide's shape.
+const CHIP_H: f32 = 52.0;
 
 /// Whether the phone layout is in use: the window is narrow. Show mode has its own full-window view.
 pub fn active(ctx: &Context) -> bool {
@@ -75,33 +75,72 @@ pub fn top_bar(app: &mut SlideApp, ui: &mut Ui) {
 /// so slide navigation stays in reach while it is open.
 pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    let Some((count, current)) = app.session.active().map(|d| (d.doc.slides.len(), d.selection.slide)) else { return };
+    let Some((doc, current)) = app.session.active().map(|d| (d.doc.clone(), d.selection.slide)) else { return };
     phone_sheet::tab_bar(app, ui);
     phone_sheet::show(app, ui);
-    egui::Panel::bottom("phone_chips").exact_size(TOUCH_H + 8.0).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+    let ppp = ui.ctx().pixels_per_point();
+    let aspect = (doc.slide_size.width / doc.slide_size.height.max(1.0)).clamp(0.5, 3.0) as f32;
+    let chip_w = (CHIP_H * aspect).round();
+    // Only chips in view render a thumbnail, a few a frame: a long deck settles over a few frames.
+    let mut budget = 3u32;
+    let mut pending = false;
+    egui::Panel::bottom("phone_chips").exact_size(CHIP_H + 12.0).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
         egui::ScrollArea::horizontal().id_salt("phone_chips").auto_shrink([false, true]).show(ui, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                for i in 0..count {
-                    if slide_chip(ui, i, i == current).clicked() {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                for i in 0..doc.slides.len() {
+                    let (rect, resp) = ui.allocate_exact_size(vec2(chip_w, CHIP_H), Sense::click());
+                    let selected = i == current;
+                    let label = format!("Slide {}", i + 1);
+                    resp.widget_info(|| WidgetInfo::selected(egui::Role::Button, true, selected, &label));
+                    let visible = ui.is_rect_visible(rect.expand2(vec2(chip_w, 0.0)));
+                    let tex = if visible {
+                        app.textures.thumb(ui.ctx(), &doc, i, (chip_w * ppp).round() as u32, app.ui.grayscale, &mut budget)
+                    } else {
+                        None
+                    };
+                    pending |= visible && tex.is_none();
+                    let hidden = doc.slides.get(i).is_some_and(|sl| sl.hidden);
+                    slide_chip(ui, rect, i, selected, hidden, tex, &t);
+                    if resp.clicked() {
                         let _ = app.run("slide.go", json!({"index": i}));
                     }
                 }
             });
         });
     });
+    if pending {
+        ui.ctx().request_repaint();
+    }
 }
 
-/// One slide chip: its number on a [`TOUCH_H`]-tall tile, filled when it is the current slide.
-fn slide_chip(ui: &mut Ui, index: usize, current: bool) -> egui::Response {
-    let t = Tokens::get(ui.ctx());
-    let (rect, resp) = ui.allocate_exact_size(vec2(CHIP_W, TOUCH_H), Sense::click());
-    let label = format!("Slide {}", index + 1);
-    resp.widget_info(|| WidgetInfo::selected(egui::Role::Button, true, current, &label));
-    let (fill, ink) = if current { (t.accent, t.accent_text) } else { (t.card, t.text) };
-    ui.painter().rect_filled(rect.shrink2(vec2(0.0, 4.0)), CornerRadius::same(8), fill);
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, (index + 1).to_string(), theme::font(15.0), ink);
-    resp
+/// One slide chip: the slide's thumbnail with its number in a corner. The current slide has an
+/// accent frame; a hidden slide is faded and struck through. It is [`CHIP_H`] tall (above the 48 pt
+/// touch minimum) and as wide as the slide's shape.
+fn slide_chip(ui: &mut Ui, rect: Rect, index: usize, current: bool, hidden: bool, tex: Option<egui::TextureHandle>, t: &Tokens) {
+    let p = ui.painter();
+    match tex {
+        Some(tex) => {
+            p.image(
+                tex.id(),
+                rect,
+                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                if hidden { Color32::from_white_alpha(120) } else { Color32::WHITE },
+            );
+        }
+        None => {
+            p.rect_filled(rect, CornerRadius::same(4), Color32::WHITE);
+        }
+    }
+    if hidden {
+        p.line_segment([rect.left_bottom(), rect.right_top()], Stroke::new(1.5, t.text_dim));
+    }
+    let (frame, width) = if current { (t.accent, 3.0) } else { (t.border, 1.0) };
+    p.rect_stroke(rect, CornerRadius::same(4), Stroke::new(width, frame), egui::StrokeKind::Outside);
+    // The number sits on a small tile so it reads over any slide.
+    let badge = Rect::from_min_size(rect.min + vec2(3.0, 3.0), vec2(20.0, 16.0));
+    p.rect_filled(badge, CornerRadius::same(4), if current { t.accent } else { t.chrome.gamma_multiply(0.85) });
+    p.text(badge.center(), Align2::CENTER_CENTER, (index + 1).to_string(), theme::font(11.0), if current { t.accent_text } else { t.text });
 }
 
 #[cfg(test)]
