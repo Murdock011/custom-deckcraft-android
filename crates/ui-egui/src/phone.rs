@@ -13,6 +13,14 @@ use crate::theme::{self, Tokens};
 
 /// Windows narrower than this (points) get the phone layout. A phone held upright is about 390 pt.
 pub const MAX_WIDTH: f32 = 600.0;
+/// Windows shorter than this get it too: a phone held sideways is wider than [`MAX_WIDTH`] but only about
+/// 360 to 430 pt tall, and the desktop ribbon would leave no room for the slide.
+pub const MAX_HEIGHT: f32 = 500.0;
+
+/// Whether a window of `size` points is a phone's: narrow (held upright) or short (held sideways).
+pub fn is_phone_size(size: egui::Vec2) -> bool {
+    size.x < MAX_WIDTH || size.y < MAX_HEIGHT
+}
 /// The Android minimum touch target, in points: every button and chip is at least this tall.
 pub const TOUCH_H: f32 = 48.0;
 /// Height of the top app bar.
@@ -20,9 +28,9 @@ const APP_BAR_H: f32 = 56.0;
 /// Height of a slide chip (its thumbnail). The width follows the slide's shape.
 const CHIP_H: f32 = 52.0;
 
-/// Whether the phone layout is in use: the window is narrow. Show mode has its own full-window view.
+/// Whether the phone layout is in use: the window is narrow or short. Show mode has its own full-window view.
 pub fn active(ctx: &Context) -> bool {
-    ctx.content_rect().width() < MAX_WIDTH
+    is_phone_size(ctx.content_rect().size())
 }
 
 /// A square icon button of [`TOUCH_H`], running nothing itself: the caller acts on the response.
@@ -161,6 +169,14 @@ mod tests {
         assert!(run(390.0), "a phone held upright");
         assert!(!run(MAX_WIDTH), "the breakpoint is exclusive");
         assert!(!run(1280.0), "a desktop window");
+    }
+
+    #[test]
+    fn a_phone_held_sideways_gets_the_phone_layout() {
+        assert!(is_phone_size(vec2(844.0, 390.0)), "a phone held sideways is wide but short");
+        assert!(!is_phone_size(vec2(1280.0, 720.0)), "a desktop window");
+        assert!(!is_phone_size(vec2(800.0, 1280.0)), "a tablet held upright");
+        assert!(!is_phone_size(vec2(1280.0, MAX_HEIGHT)), "the breakpoint is exclusive");
     }
 
     /// A whole deck drawn at phone width: the chips and toolbar run commands, and the slide count

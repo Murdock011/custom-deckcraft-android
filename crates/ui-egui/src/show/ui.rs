@@ -6,7 +6,7 @@ use super::presenter::{PresenterTimer, format_elapsed, presenter_window};
 use super::render::{below_playing_video, fit, part_textures, quad_mesh, render_frame, render_overlay, render_threads, start_prefetch};
 use super::zoom::{
     TOUCH_BAR_H, Zoom, grid_indices, norm_on_slide, paint_grid, see_all_hit, slide_aspect, slide_box, slide_to_screen, toggle_blank, tool_bar_rect,
-    touch_bar, unit_uv, wheel_zoom_lines,
+    touch_bar, touch_button_side, unit_uv, wheel_zoom_lines,
 };
 use super::{
     Align2, BackKey, Click, Color32, CornerRadius, Key, Layer, LinkJump, Pos2, Rect, RenderOpts, Sense, ShapeId, ShapeState, Show, ShowAction,
@@ -866,14 +866,15 @@ fn touch_tool_bar(ui: &mut Ui, show: &mut Show, f: &Fr, painter: &egui::Painter,
     painter.rect_filled(bar, CornerRadius::same((TOUCH_BAR_H / 2.0) as u8), Color32::from_black_alpha(170));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::left_to_right(egui::Align::Center)));
     let n = 7.0;
-    child.spacing_mut().item_spacing.x = ((bar.width() - n * TOUCH_BAR_H) / (n + 1.0)).max(0.0);
+    let side = touch_button_side(bar.width());
+    child.spacing_mut().item_spacing.x = ((bar.width() - n * side) / (n + 1.0)).max(0.0);
     child.add_space(child.spacing().item_spacing.x);
     // Glyphs the bundled fonts have (the desktop bar uses the same four); the rest are words, since a
     // glyph no font has would panic when it is laid out.
     let b = |ui: &mut Ui, s: &str, on: bool| {
         let ink = if on { Color32::from_rgb(0xFF, 0xB0, 0x40) } else { Color32::WHITE };
         let size = if s.chars().count() > 1 { 14.0 } else { 22.0 };
-        ui.add(egui::Button::new(egui::RichText::new(s).color(ink).size(size)).frame(false).min_size(vec2(TOUCH_BAR_H, TOUCH_BAR_H)))
+        ui.add(egui::Button::new(egui::RichText::new(s).color(ink).size(size)).frame(false).min_size(vec2(side, TOUCH_BAR_H)))
     };
     if b(&mut child, "◀", false).clicked() {
         let a = show.state.prev(doc);

@@ -57,6 +57,8 @@ pub static CAN_GO_BACK: AtomicBool = AtomicBool::new(false);
 pub static GPU_FAILED: AtomicBool = AtomicBool::new(false);
 /// Whether eframe has run the first `ui` call, i.e. the window surface was set up (see `android::gpu_setup`).
 pub static UI_STARTED: AtomicBool = AtomicBool::new(false);
+/// Whether a slide show is running (`SlideApp::show`). Kotlin turns the screen to landscape while it is.
+pub static PRESENTING: AtomicBool = AtomicBool::new(false);
 /// The system's night mode, from Kotlin.
 pub static NIGHT: AtomicBool = AtomicBool::new(false);
 /// Left and top padding of the surface in pixels (set by Kotlin); touch positions arrive in window

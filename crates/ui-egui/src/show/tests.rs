@@ -1421,6 +1421,15 @@ fn the_show_controls_are_touch_sized_on_a_phone() {
     let bar = zoom::tool_bar_rect(phone);
     assert!(phone.contains_rect(bar), "{bar:?} is inside the window");
     assert!(bar.height() >= 48.0 && zoom::TOUCH_BAR_H >= 48.0);
+    for w in [360.0, 390.0, 412.0] {
+        let bar = zoom::tool_bar_rect(Rect::from_min_size(pos2(0.0, 0.0), vec2(w, 800.0)));
+        let side = zoom::touch_button_side(bar.width());
+        assert!(side >= 48.0, "{w} pt wide: buttons of {side}");
+        assert!(7.0 * side <= bar.width(), "{w} pt wide: seven buttons fit the bar");
+    }
+    let sideways = Rect::from_min_size(pos2(0.0, 0.0), vec2(844.0, 390.0));
+    assert!(zoom::touch_bar(sideways), "a phone held sideways gets the touch bar too");
+    assert!(sideways.contains_rect(zoom::tool_bar_rect(sideways)));
     let desktop = Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 720.0));
     assert!(zoom::tool_bar_rect(desktop).height() < 48.0, "the desktop bar is unchanged");
 
@@ -1447,4 +1456,36 @@ fn the_show_controls_are_touch_sized_on_a_phone() {
     }
     harness.run_steps(2);
     assert!(harness.state().show.as_ref().is_some_and(|s| s.pen), "Pen is on after the tap");
+}
+
+/// Writes PNGs of the slide show at phone sizes, held upright and sideways, into `$DECKCRAFT_SHOT_DIR`
+/// (the show, then with the touch bar after a touch), for looking at the result. Does nothing when the
+/// variable is unset or no GPU renderer is available.
+#[test]
+fn show_screenshots() {
+    let Ok(dir) = std::env::var("DECKCRAFT_SHOT_DIR") else { return };
+    for (name, size) in [("portrait", vec2(390.0, 800.0)), ("landscape", vec2(844.0, 390.0))] {
+        let mut session = deckcraft_engine::Session::new();
+        deckcraft_engine::sample::open_sample(&mut session).expect("sample deck opens");
+        let mut app = SlideApp::new(session, crate::Services::default());
+        app.ui.presenter_view = false;
+        let mut harness = egui_kittest::Harness::builder().with_size(size).with_step_dt(0.1).build_ui_state(
+            |ui, app: &mut SlideApp| {
+                app.logic(ui.ctx());
+                app.ui(ui);
+            },
+            app,
+        );
+        harness.run_steps(3);
+        if let Ok(img) = harness.render() {
+            let _ = img.save(format!("{dir}/edit-{name}.png"));
+        }
+        harness.state_mut().start_show(0, false);
+        harness.run_steps(8);
+        harness.event(egui::Event::PointerMoved(pos2(size.x / 2.0, size.y / 3.0)));
+        harness.run_steps(3);
+        if let Ok(img) = harness.render() {
+            let _ = img.save(format!("{dir}/show-{name}.png"));
+        }
+    }
 }

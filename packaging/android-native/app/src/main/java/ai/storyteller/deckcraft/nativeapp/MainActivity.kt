@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -164,6 +165,8 @@ class MainActivity : GameActivity() {
     }
 
     private var gpuDialogShown = false
+    /** Whether the screen was turned to landscape for a slide show (see the poll). */
+    private var wasPresenting = false
 
     private val keyboardPoll = object : Runnable {
         override fun run() {
@@ -187,6 +190,12 @@ class MainActivity : GameActivity() {
                 finishAndRemoveTask()
                 handler.postDelayed({ android.os.Process.killProcess(android.os.Process.myPid()) }, 300)
                 return
+            }
+            // A slide show is wider than tall: turn the screen sideways for it, and hand the choice back after.
+            val presenting = nativeIsPresenting()
+            if (presenting != wasPresenting) {
+                wasPresenting = presenting
+                requestedOrientation = if (presenting) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
             // After a resume the keyboard stays down unless the document was being edited or the user taps.
             val want = nativeWantsKeyboard() && (!resumeHold || nativeCanvasEditing())
@@ -621,6 +630,7 @@ class MainActivity : GameActivity() {
     /** The text around the caret for the input method: ack, caret, composing start and end, text. */
     private external fun nativeContext(): String
     private external fun nativeResetRequest(): String
+    private external fun nativeIsPresenting(): Boolean
 
     /** Whether Android Back has a sheet, menu or Backstage to close. */
     private external fun nativeCanGoBack(): Boolean

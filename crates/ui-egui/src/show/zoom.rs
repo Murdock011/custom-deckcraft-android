@@ -263,9 +263,15 @@ pub(super) fn toggle_blank(show: &mut Show, color: Color32) {
     show.blank = if show.blank == Some(color) { None } else { Some(color) };
 }
 
-/// Whether the on-screen controls use the touch layout: a window as narrow as a phone's.
+/// Whether the on-screen controls use the touch layout: a window the size of a phone's, held either way.
 pub(super) fn touch_bar(full: Rect) -> bool {
-    full.width() < crate::phone::MAX_WIDTH
+    crate::phone::is_phone_size(full.size())
+}
+
+/// The side of a touch-bar button: [`TOUCH_BAR_H`], or less when seven of them would not fit the bar
+/// (never under the 48 pt touch minimum on a 360 pt wide phone).
+pub(super) fn touch_button_side(bar_width: f32) -> f32 {
+    ((bar_width - 8.0) / 7.0).min(TOUCH_BAR_H)
 }
 
 /// Height of the touch layout's bar and the side of its buttons: the 48 pt Android touch minimum.

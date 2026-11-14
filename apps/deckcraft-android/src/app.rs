@@ -254,6 +254,7 @@ impl eframe::App for Shell {
         // egui sets `output.ime` while a text position is focused: that is when the keyboard shows.
         ime::WANTS_KEYBOARD.store(ime_out.is_some(), Ordering::Relaxed);
         ime::CAN_GO_BACK.store(self.app.can_go_back(), Ordering::Relaxed);
+        ime::PRESENTING.store(self.app.show.is_some(), Ordering::Relaxed);
         // egui-winit has no Android clipboard; copies go to ClipboardManager through Kotlin.
         let copies: Vec<String> = ui
             .ctx()
