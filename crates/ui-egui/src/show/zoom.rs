@@ -284,7 +284,7 @@ pub(super) fn tool_bar_rect(full: Rect) -> Rect {
     if touch_bar(full) {
         // Seven buttons need about 460 pt; wider than that the bar would run under the black bars beside a
         // 16:9 slide on a phone held sideways. Centred, so it stays over the slide.
-        let w = (full.width() - 16.0).min(TOUCH_BAR_MAX_W).max(48.0);
+        let w = (full.width() - 16.0).clamp(48.0, TOUCH_BAR_MAX_W);
         return Rect::from_min_size(pos2(full.center().x - w / 2.0, full.max.y - TOUCH_BAR_H - 16.0), vec2(w, TOUCH_BAR_H));
     }
     let w = TOOL_BAR_W.min((full.width() - 32.0).max(32.0));
