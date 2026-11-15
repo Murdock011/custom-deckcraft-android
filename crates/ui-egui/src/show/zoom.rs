@@ -277,9 +277,15 @@ pub(super) fn touch_button_side(bar_width: f32) -> f32 {
 /// Height of the touch layout's bar and the side of its buttons: the 48 pt Android touch minimum.
 pub(super) const TOUCH_BAR_H: f32 = 56.0;
 
+/// The widest the touch bar gets: seven 56 pt buttons with gaps.
+const TOUCH_BAR_MAX_W: f32 = 480.0;
+
 pub(super) fn tool_bar_rect(full: Rect) -> Rect {
     if touch_bar(full) {
-        return Rect::from_min_size(pos2(full.min.x + 8.0, full.max.y - TOUCH_BAR_H - 16.0), vec2((full.width() - 16.0).max(48.0), TOUCH_BAR_H));
+        // Seven buttons need about 460 pt; wider than that the bar would run under the black bars beside a
+        // 16:9 slide on a phone held sideways. Centred, so it stays over the slide.
+        let w = (full.width() - 16.0).min(TOUCH_BAR_MAX_W).max(48.0);
+        return Rect::from_min_size(pos2(full.center().x - w / 2.0, full.max.y - TOUCH_BAR_H - 16.0), vec2(w, TOUCH_BAR_H));
     }
     let w = TOOL_BAR_W.min((full.width() - 32.0).max(32.0));
     Rect::from_min_size(pos2(full.min.x + 16.0, full.max.y - 50.0), vec2(w, 34.0))

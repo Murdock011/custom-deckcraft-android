@@ -28,6 +28,9 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
   the text, so a suggestion tapped over a word replaces it once. The context Kotlin reads (text,
   caret, composition) is published every frame from egui's IME output; Kotlin takes it only when
   Rust has read all its messages.
+- The keyboard shows only while text is edited (`keyboard::editing_text`), not for every selected shape:
+  found on the emulator, where inserting a chart raised the keyboard over half the screen. A first tap
+  selects; a second tap that starts editing raises it.
 - Reset: a tap or key during a composition makes egui wait for the platform to acknowledge an
   input-method reset, and Android never does. The host reads the id (`pending_ime_reset`), Kotlin
   restarts the input and answers with message kind 6, and the host sends `ImeResetCompleted`.

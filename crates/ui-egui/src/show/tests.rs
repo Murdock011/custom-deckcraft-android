@@ -1429,7 +1429,12 @@ fn the_show_controls_are_touch_sized_on_a_phone() {
     }
     let sideways = Rect::from_min_size(pos2(0.0, 0.0), vec2(844.0, 390.0));
     assert!(zoom::touch_bar(sideways), "a phone held sideways gets the touch bar too");
-    assert!(sideways.contains_rect(zoom::tool_bar_rect(sideways)));
+    let bar = zoom::tool_bar_rect(sideways);
+    assert!(sideways.contains_rect(bar));
+    assert!(
+        bar.width() <= 480.0 && (bar.center().x - sideways.center().x).abs() < 0.5,
+        "the bar is centred and no wider than the slide area: {bar:?}"
+    );
     let desktop = Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 720.0));
     assert!(zoom::tool_bar_rect(desktop).height() < 48.0, "the desktop bar is unchanged");
 
@@ -1469,7 +1474,7 @@ fn show_screenshots() {
         deckcraft_engine::sample::open_sample(&mut session).expect("sample deck opens");
         let mut app = SlideApp::new(session, crate::Services::default());
         app.ui.presenter_view = false;
-        let mut harness = egui_kittest::Harness::builder().with_size(size).with_step_dt(0.1).build_ui_state(
+        let mut harness = egui_kittest::Harness::builder().with_size(size).with_pixels_per_point(2.0).with_step_dt(0.1).build_ui_state(
             |ui, app: &mut SlideApp| {
                 app.logic(ui.ctx());
                 app.ui(ui);

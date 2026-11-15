@@ -531,11 +531,12 @@ mod tests {
     }
 
     /// Writes a PNG of every sheet at phone size into `$DECKCRAFT_SHOT_DIR`, for looking at the
-    /// result. Does nothing when the variable is unset or no GPU renderer is available.
+    /// result (a shape is selected, so the Text and Shape tiles are live). Does nothing when the
+    /// variable is unset or no GPU renderer is available.
     #[test]
     fn sheet_screenshots() {
         let Ok(dir) = std::env::var("DECKCRAFT_SHOT_DIR") else { return };
-        let mut harness = egui_kittest::Harness::builder().with_size(vec2(390.0, 800.0)).build_ui_state(
+        let mut harness = egui_kittest::Harness::builder().with_size(vec2(390.0, 800.0)).with_pixels_per_point(2.0).build_ui_state(
             |ui, app: &mut SlideApp| {
                 app.logic(ui.ctx());
                 app.ui(ui);
@@ -544,6 +545,11 @@ mod tests {
         );
         harness.run_steps(2);
         let _ = deckcraft_engine::sample::open_sample(&mut harness.state_mut().session);
+        harness.run_steps(2);
+        let first = harness.state().session.active().and_then(|d| d.doc.slides.first().and_then(|s| s.shapes.first().map(|sh| sh.id.0)));
+        if let Some(id) = first {
+            let _ = harness.state_mut().run("edit.select", json!({"ids": [id]}));
+        }
         for (name, s) in [
             ("closed", None),
             ("slides", Some(Sheet::Slides)),
@@ -556,7 +562,7 @@ mod tests {
             harness.state_mut().phone_sheet = s;
             harness.run_steps(3);
             if let Ok(img) = harness.render() {
-                let _ = img.save(format!("{dir}/{name}.png"));
+                let _ = img.save(format!("{dir}/sheet-{name}.png"));
             }
         }
     }
