@@ -57,7 +57,9 @@ DeckCraft, WordCraft or GridCraft build.
   Shape, Edit, More). A tab opens a sheet of large labelled tiles above the bar, so the slide stays
   in view and editable: slide layouts and order, shapes, tables, charts and media, text formatting
   with colour swatches, arrange and alignment, cut, copy and paste, view, panes and Play. Every
-  tile runs the same command as the desktop ribbon. In a slide show, tap goes forward, swipe left
+  tile runs the same command as the desktop ribbon. More ▸ All tools opens every ribbon tab and command of the
+  engine (about 290), with pickers for themes, transitions, animations, shapes and the like, forms for typed values,
+  and a search. In a slide show, tap goes forward, swipe left
   or right turns the page, a bar of 48 pt buttons (Back, Next, Pen, Laser, Blank, All, End) shows
   after a touch, and Back ends the show.
 - Opening presentations through the system file picker (.pptx, .ppsx, .potx, .deckcraft), and

@@ -122,6 +122,7 @@ impl Tile {
 
 /// Tapping a tab opens its sheet; tapping the open tab closes it.
 pub fn toggle(app: &mut SlideApp, sheet: Sheet) {
+    app.phone_tools.clear();
     app.phone_sheet = if app.phone_sheet == Some(sheet) { None } else { Some(sheet) };
 }
 
@@ -246,9 +247,13 @@ pub fn tiles(app: &mut SlideApp, sheet: Sheet) -> Vec<Tile> {
             tile(Icon::ZoomOut, "Zoom out", "view.zoomOut").keep(),
             tile(Icon::FitToWindow, "Fit", "view.fit").keep(),
             tile(Icon::Gridlines, "Gridlines", "view.gridlines"),
+            tile(Icon::List, "All tools", ALL_TOOLS),
         ],
     }
 }
+
+/// The pseudo command of the "All tools" tile: it opens the tools instead of running a command.
+const ALL_TOOLS: &str = "phone.tools";
 
 /// A tap-to-insert shape: placed in the middle of a standard slide, ready to drag and resize.
 fn shape_tile(icon: Icon, label: &'static str, preset: &'static str) -> Tile {
@@ -292,6 +297,11 @@ pub fn tab_bar(app: &mut SlideApp, ui: &mut Ui) {
 
 /// The open sheet, as a panel above the tab bar. Draws nothing when no sheet is open.
 pub fn show(app: &mut SlideApp, ui: &mut Ui) {
+    // The all-tools screens, when open, take the sheet's place.
+    if !app.phone_tools.is_empty() {
+        crate::phone_tools::show(app, ui);
+        return;
+    }
     let Some(sheet) = app.phone_sheet else { return };
     let t = Tokens::get(ui.ctx());
     let tiles = tiles(app, sheet);
@@ -332,7 +342,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
                     for tl in tiles.iter().skip(i).take(cols) {
-                        let en = ribbon::enabled(app, tl.id);
+                        let en = tl.id == ALL_TOOLS || ribbon::enabled(app, tl.id);
                         if tile_button(ui, tl, tile_w, en, &t).clicked() && en {
                             ran = Some((tl.id, tl.params.clone(), tl.keep_open));
                         }
@@ -343,6 +353,10 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         });
     });
     if let Some((id, params, keep)) = ran {
+        if id == ALL_TOOLS {
+            crate::phone_tools::open(app);
+            return;
+        }
         let _ = app.run(id, params);
         if !keep {
             app.phone_sheet = None;
@@ -389,7 +403,7 @@ mod tests {
         let mut app = app_with_sample();
         for s in Sheet::ALL {
             for tl in tiles(&mut app, s) {
-                assert!(ribbon::known(tl.id), "{:?} tile `{}` runs unknown command `{}`", s, tl.label, tl.id);
+                assert!(tl.id == ALL_TOOLS || ribbon::known(tl.id), "{:?} tile `{}` runs unknown command `{}`", s, tl.label, tl.id);
             }
         }
     }

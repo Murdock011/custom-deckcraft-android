@@ -54,6 +54,7 @@ mod ime_hooks;
 pub mod panels;
 mod phone;
 mod phone_sheet;
+mod phone_tools;
 mod services;
 mod state;
 
@@ -233,6 +234,8 @@ pub struct SlideApp {
     pub dialog: Option<dialogs::Dialog>,
     /// The open phone bottom sheet (phone layout only).
     pub phone_sheet: Option<phone_sheet::Sheet>,
+    /// The phone's all-tools screens, innermost last (Back closes one).
+    pub phone_tools: Vec<phone_tools::Tool>,
     /// The word looked up in the Thesaurus pane.
     pub thesaurus_query: String,
     pub show: Option<show::Show>,

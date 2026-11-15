@@ -52,6 +52,7 @@ impl SlideApp {
             squiggles: Default::default(),
             dialog: None,
             phone_sheet: None,
+            phone_tools: Vec::new(),
             thesaurus_query: String::new(),
             show: None,
             anim_preview: None,
@@ -183,7 +184,7 @@ impl SlideApp {
     /// Whether Android's Back button has something to close first: the File tab's view, a dialog, a phone sheet or the slide show (Escape ends it).
     /// The Android host asks each frame and sends Escape when this is true.
     pub fn can_go_back(&self) -> bool {
-        self.backstage_open() || self.dialog.is_some() || self.phone_sheet.is_some() || self.show.is_some()
+        self.backstage_open() || self.dialog.is_some() || self.phone_sheet.is_some() || !self.phone_tools.is_empty() || self.show.is_some()
     }
 
     /// Opens the File tab's view on `page` (keeping its state when it is already open).
@@ -320,6 +321,9 @@ impl SlideApp {
             self.perf.frame_ms = now_ms() - t0;
             self.ui_end(&ctx);
             return;
+        }
+        if !self.phone_tools.is_empty() && self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            let _ = crate::phone_tools::back(self);
         }
         if self.phone_sheet.is_some() && self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             self.phone_sheet = None;

@@ -31,6 +31,15 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - The keyboard shows only while text is edited (`keyboard::editing_text`), not for every selected shape:
   found on the emulator, where inserting a chart raised the keyboard over half the screen. A first tap
   selects; a second tap that starts editing raises it.
+- All tools (More ▸ All tools, `phone_tools.rs`): every ribbon tab and command of the engine, on a phone. Rows
+  are built from the engine's own command list (`command_specs`: its ribbon tab and group, whether it needs
+  arguments, why it is disabled), so a new command appears without editing a table. A tap runs the command, opens
+  a picker fed by the engine's galleries (themes, colours, fonts, slide sizes, transitions, animations, shapes,
+  picture styles, chart types, font names and sizes, or any `a|b|c` spelled out in the params doc), or opens a
+  form for typed values (numbers, true/false and lists are read as such). Contextual tabs (Shape Format, Picture
+  Format, Table Design and Layout, Diagram, Chart, Playback, masters) list only while the selection calls for
+  them. Search finds any command by name or id. Back closes one screen at a time. Commands that need a file say
+  where to go. Not done: thumbnail galleries, a colour picker in forms, Draw (pen) and Record.
 - The File view (Backstage) on a phone: the side menu is a full-width list of 52 pt rows, a tap opens one page
   full width with its own back arrow, and Back (Esc) goes page → menu → presentation. Found on a real phone:
   Export's file-type list and Save As's Save button ran off the screen. Export, Save As, Print and Info
