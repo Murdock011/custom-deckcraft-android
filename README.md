@@ -6,14 +6,23 @@
 > **This project is made entirely by AI.** All of the code, notes and documentation in this
 > repository's Android work were written by AI coding agents (Anthropic's Claude models), directed
 > by a person who did not write or review the code line by line. It has not had human code
-> review or security review. **It has not been built or run on Android yet**: the host crate and
-> the phone layout are only checked on the desktop. Expect bugs. Do not trust it with
-> presentations you can't afford to lose.
+> review or security review, and it has only been tried briefly on an Android emulator, never on a
+> physical phone. Expect bugs. Do not trust it with presentations you can't afford to lose.
 
 > [!IMPORTANT]
 > **This is an unofficial, personal fork. It is not made, endorsed or supported by the ArtCraft
 > team or by storytold.** It is not the official DeckCraft, and it is not an ArtCraft project.
 > Please don't report problems with this fork to the original project.
+
+## Screenshots
+
+<p><img src="docs/screenshots/home.png" width="180" alt="Home screen with templates"> <img src="docs/screenshots/editor.png" width="180" alt="A new presentation in the editor, with the slide chips and the tab bar"> <img src="docs/screenshots/insert-sheet.png" width="180" alt="The Insert sheet"> <img src="docs/screenshots/chart.png" width="180" alt="A column chart inserted on a slide"></p>
+
+<p><img src="docs/screenshots/text-sheet.png" width="180" alt="The Text sheet with colour swatches"> <img src="docs/screenshots/shape-sheet.png" width="180" alt="The Shape sheet"> <img src="docs/screenshots/slide-show.png" width="380" alt="A slide show held sideways, with the touch bar"></p>
+
+The first four pictures are screenshots from an Android 14 emulator. The Text sheet, the Shape sheet
+and the slide show are drawn by the app's own UI test renderer at phone size, because the emulator
+(software-emulated, with no hardware acceleration) was too slow to drive them reliably.
 
 ## What this is
 
@@ -34,9 +43,11 @@ same way. Changes below the interface are listed in
 
 ## Download
 
-There is no release yet, and no build has been made. When a release is made it will be on the
-[Releases page](https://github.com/Murdock011/custom-deckcraft-android/releases). It installs as
-`ai.storyteller.deckcraft.native`, next to any other DeckCraft, WordCraft or GridCraft build.
+Builds are on the [Releases page](https://github.com/Murdock011/custom-deckcraft-android/releases).
+The latest is **0.1.0**: `custom-deckcraft-android-arm64.apk`, for 64-bit ARM phones (arm64-v8a)
+with Android 10 or newer. It is signed with a debug key, so Android asks you to allow installs from
+your browser or file manager. It installs as `ai.storyteller.deckcraft.native`, next to any other
+DeckCraft, WordCraft or GridCraft build.
 
 ## What is built
 
@@ -60,7 +71,7 @@ emulator.
 
 ## Known gaps
 
-- Built as an arm64 debug APK, but not yet tried on an emulator or a phone. Expect bugs.
+- Built as an arm64 debug APK and tried briefly on an emulator, but not on a physical phone. Expect bugs.
 - The soft keyboard bridge is new and has only been tested on the desktop. Suggestions are still
   turned off until typing is confirmed on a device.
 - Pinch zoom, pen and laser by touch have only been tried in desktop tests.

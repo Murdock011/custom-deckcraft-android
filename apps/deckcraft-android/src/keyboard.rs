@@ -22,6 +22,14 @@ pub const KEYCODE_DEL: i32 = 67;
 pub const KEYCODE_FORWARD_DEL: i32 = 112;
 pub const KEYCODE_ESCAPE: i32 = 111;
 
+/// Whether the soft keyboard is wanted: text is being edited. A shape that is only selected has a text
+/// position but offers no text (`Unavailable`: the first commit would start editing with all of it
+/// selected), and raising the keyboard for every selection covers half a phone screen. Selecting
+/// shows no keyboard; a second tap that starts editing does.
+pub fn editing_text(surrounding: &egui::output::IMESurroundingText) -> bool {
+    matches!(surrounding, egui::output::IMESurroundingText::Available(_))
+}
+
 /// The text around the caret that egui reported last frame, with the composition left out.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Around {
@@ -218,6 +226,15 @@ mod tests {
     }
 
     /// Gboard types h, he, hel as composing text, then finishes: the word stays, committed once.
+    /// Selecting a shape shows no keyboard; editing its text does.
+    #[test]
+    fn the_keyboard_is_wanted_only_while_text_is_edited() {
+        use egui::output::{IMESurroundingText, IMESurroundingTextPayload};
+        assert!(!editing_text(&IMESurroundingText::Unavailable), "a selected shape, not edited");
+        let editing = IMESurroundingText::Available(IMESurroundingTextPayload { text: "ab".into(), cursor: 2, anchor: 2 });
+        assert!(editing_text(&editing), "a text position being edited");
+    }
+
     #[test]
     fn composing_then_finish_commits_the_word_and_never_cancels_it() {
         let mut kb = Keyboard::default();

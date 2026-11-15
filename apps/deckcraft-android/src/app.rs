@@ -17,7 +17,7 @@ use egui::{Event, Key};
 use crate::clip;
 use crate::files;
 use crate::ime;
-use crate::keyboard::{Around, Keyboard};
+use crate::keyboard::{self, Around, Keyboard};
 
 /// The unsaved presentations as the recovery copies should hold them, refreshed whenever one changes.
 /// The pause flush (a JNI call, with no frame to wait for) writes this from its own thread.
@@ -254,7 +254,7 @@ impl eframe::App for Shell {
         }
         ime::publish_context(ime::encode(ime::taken(), &self.keyboard.context()));
         // egui sets `output.ime` while a text position is focused: that is when the keyboard shows.
-        ime::WANTS_KEYBOARD.store(ime_out.is_some(), Ordering::Relaxed);
+        ime::WANTS_KEYBOARD.store(ime_out.as_ref().is_some_and(|o| keyboard::editing_text(&o.surrounding_text)), Ordering::Relaxed);
         ime::CAN_GO_BACK.store(self.app.can_go_back(), Ordering::Relaxed);
         ime::PRESENTING.store(self.app.show.is_some(), Ordering::Relaxed);
         // egui-winit has no Android clipboard; copies go to ClipboardManager through Kotlin.
