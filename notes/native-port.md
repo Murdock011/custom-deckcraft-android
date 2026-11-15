@@ -31,6 +31,12 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - The keyboard shows only while text is edited (`keyboard::editing_text`), not for every selected shape:
   found on the emulator, where inserting a chart raised the keyboard over half the screen. A first tap
   selects; a second tap that starts editing raises it.
+- The File view (Backstage) on a phone: the side menu is a full-width list of 52 pt rows, a tap opens one page
+  full width with its own back arrow, and Back (Esc) goes page → menu → presentation. Found on a real phone:
+  Export's file-type list and Save As's Save button ran off the screen. Export, Save As, Print and Info
+  stack vertically; Save As lists every type as a 56 pt row. Open, New and About were not checked closely.
+- Saving as `.odp` (OpenDocument) or `.ppt` (the old binary format) is not possible: the engine writes
+  `.pptx`, `.deckcraft`, PDF, outline text, RTF, PNG and JPEG only.
 - Reset: a tap or key during a composition makes egui wait for the platform to acknowledge an
   input-method reset, and Android never does. The host reads the id (`pending_ime_reset`), Kotlin
   restarts the input and answers with message kind 6, and the host sends `ImeResetCompleted`.

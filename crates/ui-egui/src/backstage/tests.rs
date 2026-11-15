@@ -801,3 +801,82 @@ fn about_appearance_stays_on_the_page_at_minimum_width() {
     let r = h.query_all_by_role_and_label(Role::ComboBox, "Appearance").next().expect("Appearance selector").rect();
     assert!(r.right() <= 900.0, "Appearance selector ends at {}, inside the window", r.right());
 }
+
+/// Writes PNGs of the File menu and every page at phone size into `$DECKCRAFT_SHOT_DIR`, for looking at
+/// the result. Does nothing when the variable is unset or no GPU renderer is available.
+#[test]
+fn backstage_phone_screenshots() {
+    let Ok(dir) = std::env::var("DECKCRAFT_SHOT_DIR") else { return };
+    let mut session = deckcraft_engine::Session::new();
+    deckcraft_engine::sample::open_sample(&mut session).expect("sample deck opens");
+    let app = SlideApp::new(session, crate::Services::default());
+    let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(390.0, 800.0)).with_pixels_per_point(2.0).build_ui_state(
+        |ui, app: &mut SlideApp| {
+            app.logic(ui.ctx());
+            app.ui(ui);
+        },
+        app,
+    );
+    harness.run_steps(3);
+    harness.state_mut().open_backstage(Page::Home);
+    harness.run_steps(3);
+    if let Ok(img) = harness.render() {
+        let _ = img.save(format!("{dir}/bs-menu.png"));
+    }
+    for page in Page::ALL {
+        harness.state_mut().open_backstage(page);
+        harness.run_steps(3);
+        if let Ok(img) = harness.render() {
+            let _ = img.save(format!("{dir}/bs-{}.png", page.id()));
+        }
+    }
+}
+
+fn phone_harness() -> Harness<'static, SlideApp> {
+    let mut session = Session::new();
+    deckcraft_engine::sample::open_sample(&mut session).expect("sample deck opens");
+    let mut h = Harness::builder().with_size(egui::vec2(390.0, 800.0)).build_ui_state(
+        |ui, app: &mut SlideApp| {
+            app.logic(ui.ctx());
+            app.ui(ui);
+        },
+        SlideApp::new(session, Services::default()),
+    );
+    h.run_steps(3);
+    h
+}
+
+/// On a phone the File menu is a list that fills the screen, a tap opens one page full width, and Back (Esc)
+/// goes from the page to the menu and then to the presentation.
+#[test]
+fn on_a_phone_the_file_menu_and_one_page_show_one_at_a_time() {
+    let mut h = phone_harness();
+    h.state_mut().open_backstage(Page::Home);
+    h.run_steps(3);
+    assert!(h.state().backstage.as_ref().is_some_and(|b| b.phone && b.phone_menu), "the menu shows first");
+    h.get_by_label("Export").click();
+    h.run_steps(3);
+    let bs = h.state().backstage.as_ref().expect("the File view is open");
+    assert_eq!(bs.page, Page::Export);
+    assert!(!bs.phone_menu, "the page shows, not the menu");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().backstage.as_ref().is_some_and(|b| b.phone_menu), "Esc goes back to the menu");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().backstage.is_none(), "and Esc again returns to the presentation");
+}
+
+/// Save As on a phone lists every file type as a tappable row, PowerPoint first, so none is out of sight.
+#[test]
+fn on_a_phone_save_as_lists_every_file_type() {
+    let mut h = phone_harness();
+    h.state_mut().open_backstage(Page::SaveAs);
+    h.run_steps(3);
+    for (_, label, _) in crate::backstage::SAVE_TYPES {
+        h.get_by_label(label);
+    }
+    h.get_by_label("DeckCraft Presentation (*.deckcraft)").click();
+    h.run_steps(2);
+    assert_eq!(h.state().backstage.as_ref().map(|b| b.file_type), Some("deckcraft"), "a tap chooses the type");
+}

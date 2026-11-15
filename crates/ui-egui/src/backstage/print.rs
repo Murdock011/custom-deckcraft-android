@@ -1,8 +1,8 @@
 use super::files::{place_row, square_button};
-use super::info::SAVE_TYPES;
+use super::info::type_rows;
 use super::{
-    Align2, Backstage, Color32, CornerRadius, ExportTask, Icon, PrintScope, Rect, RichText, Sense, SlideApp, Stroke, StrokeKind, Tokens, Ui, Value,
-    bullets, dim, heading, icon_button, json, pos2, theme, vec2,
+    Backstage, Color32, CornerRadius, ExportTask, Icon, PrintScope, Rect, RichText, Sense, SlideApp, Stroke, StrokeKind, Tokens, Ui, Value, bullets,
+    dim, heading, icon_button, json, pos2, theme, vec2,
 };
 
 /// The slides the Print page prints, in order (0-based).
@@ -71,9 +71,14 @@ pub(super) fn print(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
         return;
     };
     let slides = print_slides(&doc, bs, current);
-    ui.horizontal_top(|ui| {
+    // A phone stacks the settings above the preview: side by side the preview ran off the screen.
+    let phone = crate::phone::is_phone_size(ui.ctx().content_rect().size());
+    let layout = if phone { egui::Layout::top_down(egui::Align::Min) } else { egui::Layout::left_to_right(egui::Align::Min) };
+    ui.with_layout(layout, |ui| {
         ui.vertical(|ui| {
-            ui.set_width(250.0);
+            if !phone {
+                ui.set_width(250.0);
+            }
             let ok = slides.as_ref().is_ok_and(|s| !s.is_empty());
             if square_button(ui, Icon::Print, "Print", ok).clicked()
                 && let Ok(s) = &slides
@@ -171,8 +176,13 @@ pub(super) fn print(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
             }
         });
         ui.add_space(20.0);
-        let (r, _) = ui.allocate_exact_size(vec2(1.0, 560.0), Sense::hover());
-        ui.painter().line_segment([r.center_top(), r.center_bottom()], Stroke::new(1.0, t.separator));
+        if phone {
+            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+            ui.painter().line_segment([r.left_center(), r.right_center()], Stroke::new(1.0, t.separator));
+        } else {
+            let (r, _) = ui.allocate_exact_size(vec2(1.0, 560.0), Sense::hover());
+            ui.painter().line_segment([r.center_top(), r.center_bottom()], Stroke::new(1.0, t.separator));
+        }
         ui.add_space(20.0);
         ui.vertical(|ui| match &slides {
             Err(e) => dim(ui, e),
@@ -287,14 +297,31 @@ fn preview(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, doc: &deckcraft_
 /// exports aren't offered.
 pub(super) fn export(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
     let t = Tokens::get(ui.ctx());
+    const TASKS: [(ExportTask, Icon, &str); 3] = [
+        (ExportTask::Pdf, Icon::File, "Create PDF Document"),
+        (ExportTask::Handouts, Icon::Notes, "Create Handouts"),
+        (ExportTask::FileType, Icon::Export, "Change File Type"),
+    ];
+    if crate::phone::is_phone_size(ui.ctx().content_rect().size()) {
+        // A phone: the tasks as full-width rows, the chosen one's options below them. Side by side they
+        // ran off the screen, and the list of file types (PowerPoint, PNG…) was out of sight.
+        let w = ui.available_width();
+        for (task, icon, label) in TASKS {
+            if place_row(ui, icon, label, bs.export == task, w).clicked() {
+                bs.export = task;
+            }
+        }
+        ui.add_space(8.0);
+        let (r, _) = ui.allocate_exact_size(vec2(w, 1.0), Sense::hover());
+        ui.painter().line_segment([r.left_center(), r.right_center()], Stroke::new(1.0, t.separator));
+        ui.add_space(12.0);
+        export_task(app, ui, bs, w);
+        return;
+    }
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(250.0);
-            for (task, icon, label) in [
-                (ExportTask::Pdf, Icon::File, "Create PDF Document"),
-                (ExportTask::Handouts, Icon::Notes, "Create Handouts"),
-                (ExportTask::FileType, Icon::Export, "Change File Type"),
-            ] {
+            for (task, icon, label) in TASKS {
                 if place_row(ui, icon, label, bs.export == task, 244.0).clicked() {
                     bs.export = task;
                 }
@@ -305,70 +332,60 @@ pub(super) fn export(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
         ui.add_space(24.0);
         ui.vertical(|ui| {
             ui.set_max_width(560.0);
-            match bs.export {
-                ExportTask::Pdf => {
-                    ui.label(RichText::new("Create a PDF Document").font(theme::font(16.0)).color(t.text));
-                    bullets(
-                        ui,
-                        &["Keeps the layout, fonts and pictures", "Opens on any device with a PDF viewer", "The presentation keeps its own file"],
-                    );
-                    ui.checkbox(&mut bs.pdf_hidden, "Include hidden slides");
-                    ui.add_space(10.0);
-                    if square_button(ui, Icon::File, "Create PDF", true).clicked() {
-                        app.export_as("pdf", json!({"includeHidden": bs.pdf_hidden}));
-                    }
-                }
-                ExportTask::Handouts => {
-                    ui.label(RichText::new("Create Handouts").font(theme::font(16.0)).color(t.text));
-                    bullets(ui, &["Several slides on each page of a PDF", "Three a page leaves lines for notes", "Print them for your audience"]);
-                    let combo = craft_ui::ComboBox::from_id_salt("backstage_handouts")
-                        .width(240.0)
-                        .selected_text(format!("{} slides per page", bs.handouts_per_page))
-                        .show_ui(ui, |ui| {
-                            for n in [1u8, 2, 3, 4, 6, 9] {
-                                if ui.selectable_label(bs.handouts_per_page == n, format!("{n} slides per page")).clicked() {
-                                    bs.handouts_per_page = n;
-                                }
-                            }
-                        });
-                    combo.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, "Slides per page"));
-                    ui.add_space(10.0);
-                    if square_button(ui, Icon::Notes, "Create Handouts", true).clicked() {
-                        app.export_as("pdf", json!({"layout": "handouts", "perPage": bs.handouts_per_page}));
-                    }
-                }
-                ExportTask::FileType => {
-                    ui.label(RichText::new("Change File Type").font(theme::font(16.0)).color(t.text));
-                    ui.add_space(8.0);
-                    for (id, label, detail) in SAVE_TYPES.iter().filter(|s| s.0 != "pdf") {
-                        let selected = bs.file_type == *id;
-                        let (rect, resp) = ui.allocate_exact_size(vec2(520.0, 46.0), Sense::click());
-                        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, *label));
-                        let p = ui.painter();
-                        if selected {
-                            p.rect_filled(rect, CornerRadius::same(2), t.selected);
-                        } else if resp.hovered() {
-                            p.rect_filled(rect, CornerRadius::same(2), t.hover);
-                        }
-                        p.text(pos2(rect.left() + 12.0, rect.center().y - 8.0), Align2::LEFT_CENTER, *label, theme::font(13.0), t.text);
-                        p.text(pos2(rect.left() + 12.0, rect.center().y + 9.0), Align2::LEFT_CENTER, *detail, theme::font(11.5), t.text_dim);
-                        if resp.clicked() {
-                            bs.file_type = id;
-                        }
-                    }
-                    ui.add_space(12.0);
-                    let png = bs.file_type == "png";
-                    if png {
-                        ui.checkbox(&mut bs.png_transparent, "Transparent background")
-                            .on_hover_text("Leave the slide background out: only what is on the slide is drawn");
-                        ui.add_space(8.0);
-                    }
-                    if square_button(ui, Icon::SaveAs, "Save As", true).clicked() {
-                        let extra = if png && bs.png_transparent { json!({"transparentBackground": true}) } else { json!({}) };
-                        app.export_as(bs.file_type, extra);
-                    }
-                }
-            }
+            export_task(app, ui, bs, 520.0);
         });
     });
+}
+
+/// The chosen Export task's description and button; `row_w` is the width of the file-type rows.
+fn export_task(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, row_w: f32) {
+    let t = Tokens::get(ui.ctx());
+    // Rows are 56 pt tall on a phone (over the 48 pt touch minimum), 46 pt on a desktop.
+    let row_h = if crate::phone::is_phone_size(ui.ctx().content_rect().size()) { 56.0 } else { 46.0 };
+    match bs.export {
+        ExportTask::Pdf => {
+            ui.label(RichText::new("Create a PDF Document").font(theme::font(16.0)).color(t.text));
+            bullets(ui, &["Keeps the layout, fonts and pictures", "Opens on any device with a PDF viewer", "The presentation keeps its own file"]);
+            ui.checkbox(&mut bs.pdf_hidden, "Include hidden slides");
+            ui.add_space(10.0);
+            if square_button(ui, Icon::File, "Create PDF", true).clicked() {
+                app.export_as("pdf", json!({"includeHidden": bs.pdf_hidden}));
+            }
+        }
+        ExportTask::Handouts => {
+            ui.label(RichText::new("Create Handouts").font(theme::font(16.0)).color(t.text));
+            bullets(ui, &["Several slides on each page of a PDF", "Three a page leaves lines for notes", "Print them for your audience"]);
+            let combo = craft_ui::ComboBox::from_id_salt("backstage_handouts")
+                .width(240.0)
+                .selected_text(format!("{} slides per page", bs.handouts_per_page))
+                .show_ui(ui, |ui| {
+                    for n in [1u8, 2, 3, 4, 6, 9] {
+                        if ui.selectable_label(bs.handouts_per_page == n, format!("{n} slides per page")).clicked() {
+                            bs.handouts_per_page = n;
+                        }
+                    }
+                });
+            combo.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, "Slides per page"));
+            ui.add_space(10.0);
+            if square_button(ui, Icon::Notes, "Create Handouts", true).clicked() {
+                app.export_as("pdf", json!({"layout": "handouts", "perPage": bs.handouts_per_page}));
+            }
+        }
+        ExportTask::FileType => {
+            ui.label(RichText::new("Change File Type").font(theme::font(16.0)).color(t.text));
+            ui.add_space(8.0);
+            type_rows(ui, bs, row_w, row_h, "pdf");
+            ui.add_space(12.0);
+            let png = bs.file_type == "png";
+            if png {
+                ui.checkbox(&mut bs.png_transparent, "Transparent background")
+                    .on_hover_text("Leave the slide background out: only what is on the slide is drawn");
+                ui.add_space(8.0);
+            }
+            if square_button(ui, Icon::SaveAs, "Save As", true).clicked() {
+                let extra = if png && bs.png_transparent { json!({"transparentBackground": true}) } else { json!({}) };
+                app.export_as(bs.file_type, extra);
+            }
+        }
+    }
 }
