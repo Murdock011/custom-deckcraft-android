@@ -341,6 +341,21 @@ pub fn open(app: &mut SlideApp) {
     app.phone_tools = vec![Tool::Tabs];
 }
 
+/// Open the tools on Search (the More sheet's Search row, the List style's tab menu).
+pub fn open_search(app: &mut SlideApp) {
+    app.phone_sheet = None;
+    app.phone_tools = vec![Tool::Tabs, Tool::Search(String::new())];
+}
+
+/// Open the tools on one command's picker or form (a sheet's tile such as Shapes…). Back from it
+/// goes to the list of tabs.
+pub fn open_command(app: &mut SlideApp, id: &str) {
+    let Some(spec) = command_specs().iter().find(|s| s.id == id) else { return };
+    app.phone_sheet = None;
+    app.phone_tools = vec![Tool::Tabs];
+    tap(app, spec);
+}
+
 /// Closes the top screen. True when there was one to close.
 pub fn back(app: &mut SlideApp) -> bool {
     app.phone_tools.pop().is_some()

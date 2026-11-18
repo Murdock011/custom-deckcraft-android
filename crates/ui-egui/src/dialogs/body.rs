@@ -1342,9 +1342,32 @@ fn dlg_preferences(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         d.params = json!({ "before": preferences_snapshot(app) });
     }
     ui.label(egui::RichText::new("General").font(theme::bold(13.0)));
-    let mut dark = app.ui.brightness == theme::Brightness::Dark;
-    if ui.checkbox(&mut dark, "Dark appearance").changed() {
-        let _ = app.run("view.dark", json!({"on": dark}));
+    // Theme: Light (the default), Dark, or System (follows the system's setting, live).
+    let mode = if app.ui.follow_system {
+        "system"
+    } else if app.ui.brightness == theme::Brightness::Dark {
+        "dark"
+    } else {
+        "light"
+    };
+    ui.label("Theme");
+    ui.horizontal_wrapped(|ui| {
+        for (value, label) in [("light", "Light"), ("dark", "Dark"), ("system", "System")] {
+            if ui.radio(mode == value, label).clicked() && mode != value {
+                let _ = app.run("view.theme", json!({"mode": value}));
+            }
+        }
+    });
+    // The phone's toolbar style, shown only on a phone.
+    if crate::phone::active(ui.ctx()) {
+        ui.label("Phone layout");
+        ui.horizontal_wrapped(|ui| {
+            for (list, label) in [(false, "Tiles"), (true, "List")] {
+                if ui.radio(app.ui.phone_list_style == list, label).clicked() && app.ui.phone_list_style != list {
+                    let _ = app.run("ui.phoneSheetStyle", json!({"style": if list { "list" } else { "tiles" }}));
+                }
+            }
+        });
     }
     // While the pointer holds the slider its value only waits in the dialog: applying it
     // would rescale the slider under the pointer and run it to an end (#767). It applies

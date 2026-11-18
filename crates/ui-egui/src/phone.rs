@@ -23,8 +23,9 @@ pub fn is_phone_size(size: egui::Vec2) -> bool {
 }
 /// The Android minimum touch target, in points: every button and chip is at least this tall.
 pub const TOUCH_H: f32 = 48.0;
-/// Height of the top app bar.
-const APP_BAR_H: f32 = 56.0;
+/// Height of the top app bar, and in a window under 500 pt tall (a phone held sideways).
+const APP_BAR_H: f32 = 64.0;
+const APP_BAR_H_SHORT: f32 = 48.0;
 /// Height of a slide chip (its thumbnail). The width follows the slide's shape.
 const CHIP_H: f32 = 52.0;
 
@@ -49,27 +50,34 @@ fn icon_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, on: bool) ->
     resp
 }
 
-/// The top app bar: File (the Backstage), the title, Undo, Redo and Play from Start.
+/// The top app bar: File (the Backstage), the title (with ` •` for unsaved changes), Undo, Redo,
+/// Save and Play from Start. Undo and Redo are disabled when they have nothing to do.
 pub fn top_bar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let (title, dirty) = app.session.active().map(|d| (d.title(), d.is_dirty())).unwrap_or_default();
-    egui::Panel::top("phone_top").exact_size(APP_BAR_H).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+    let height = if ui.ctx().content_rect().height() < MAX_HEIGHT { APP_BAR_H_SHORT } else { APP_BAR_H };
+    egui::Panel::top("phone_top").exact_size(height).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             if icon_button(ui, Icon::File, "File", true, app.backstage_open()).clicked() {
                 let _ = app.run("app.home", json!({}));
             }
-            let right = 3.0 * TOUCH_H;
+            let right = 4.0 * TOUCH_H;
             let w = (ui.available_width() - right).max(0.0);
             let (rect, _) = ui.allocate_exact_size(vec2(w, TOUCH_H), Sense::hover());
             let text = if dirty { format!("{title} •") } else { title };
-            ui.painter().with_clip_rect(rect).text(pos2(rect.min.x + 4.0, rect.center().y), Align2::LEFT_CENTER, text, theme::font(16.0), t.text);
+            ui.painter().with_clip_rect(rect).text(pos2(rect.min.x + 4.0, rect.center().y), Align2::LEFT_CENTER, text, theme::bold(18.0), t.text);
             let has_doc = app.session.active().is_some();
-            if icon_button(ui, Icon::Undo, "Undo", has_doc, false).clicked() {
+            let undo = has_doc && deckcraft_engine::cmd::can_undo(&app.session).is_ok();
+            let redo = has_doc && deckcraft_engine::cmd::can_redo(&app.session).is_ok();
+            if icon_button(ui, Icon::Undo, "Undo", undo, false).clicked() {
                 let _ = app.run("edit.undo", json!({}));
             }
-            if icon_button(ui, Icon::Redo, "Redo", has_doc, false).clicked() {
+            if icon_button(ui, Icon::Redo, "Redo", redo, false).clicked() {
                 let _ = app.run("edit.redo", json!({}));
+            }
+            if icon_button(ui, Icon::Save, "Save", has_doc, false).clicked() {
+                let _ = app.run("file.save", json!({}));
             }
             if icon_button(ui, Icon::PlayFromStart, "Play from start", has_doc, false).clicked() {
                 let _ = app.run("show.fromStart", json!({}));
@@ -84,7 +92,12 @@ pub fn top_bar(app: &mut SlideApp, ui: &mut Ui) {
 pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some((doc, current)) = app.session.active().map(|d| (d.doc.clone(), d.selection.slide)) else { return };
-    phone_sheet::tab_bar(app, ui);
+    // Tiles: the tab bar at the bottom, the sheet above it. List: no tab bar; the sheet at the
+    // bottom, or the floating quick bar above the slide chips while no sheet is open.
+    let list = phone_sheet::list_style(app);
+    if !list {
+        phone_sheet::tab_bar(app, ui);
+    }
     phone_sheet::show(app, ui);
     let ppp = ui.ctx().pixels_per_point();
     let aspect = (doc.slide_size.width / doc.slide_size.height.max(1.0)).clamp(0.5, 3.0) as f32;
@@ -119,6 +132,9 @@ pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
             });
         });
     });
+    if list {
+        phone_sheet::quick_bar(app, ui);
+    }
     if pending {
         ui.ctx().request_repaint();
     }

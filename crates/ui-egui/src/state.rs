@@ -51,6 +51,12 @@ pub enum ViewMode {
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
     pub brightness: theme::Brightness,
+    /// The theme follows the system's light or dark setting (`view.theme` `"system"`); `brightness`
+    /// then holds what the system asks for.
+    pub follow_system: bool,
+    /// Phone: the List style (the floating quick bar and list sheets) in place of the Tiles style
+    /// (a tab bar and tile sheets), the default (`ui.phoneSheetStyle`).
+    pub phone_list_style: bool,
     pub tab: String,
     pub ribbon_collapsed: bool,
     pub view: ViewMode,
@@ -100,6 +106,8 @@ impl Default for UiState {
     fn default() -> Self {
         UiState {
             brightness: theme::Brightness::Light,
+            follow_system: false,
+            phone_list_style: false,
             tab: "Home".into(),
             ribbon_collapsed: false,
             view: ViewMode::Normal,

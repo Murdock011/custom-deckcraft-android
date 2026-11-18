@@ -154,7 +154,22 @@ impl SlideApp {
                 self.ui.ribbon_collapsed = false;
             }
             "view.collapseRibbon" => self.ui.ribbon_collapsed = !self.ui.ribbon_collapsed,
+            "view.theme" => {
+                match p.get("mode").and_then(Value::as_str) {
+                    Some("light") => (self.ui.follow_system, self.ui.brightness) = (false, theme::Brightness::Light),
+                    Some("dark") => (self.ui.follow_system, self.ui.brightness) = (false, theme::Brightness::Dark),
+                    Some("system") => self.ui.follow_system = true,
+                    other => return Err(format!("`mode` must be light, dark or system, not {other:?}")),
+                }
+                self.restyle = true;
+            }
+            "ui.phoneSheetStyle" => match p.get("style").and_then(Value::as_str) {
+                Some("tiles") => self.ui.phone_list_style = false,
+                Some("list") => self.ui.phone_list_style = true,
+                other => return Err(format!("`style` must be tiles or list, not {other:?}")),
+            },
             "view.dark" => {
+                self.ui.follow_system = false;
                 let on = self.flag(p, self.ui.brightness == theme::Brightness::Dark);
                 self.ui.brightness = if on { theme::Brightness::Dark } else { theme::Brightness::Light };
                 self.restyle = true;
