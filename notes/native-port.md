@@ -72,6 +72,27 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
   phone width. `DECKCRAFT_SHOT_DIR=… cargo test -p deckcraft-ui-egui --lib sheet_screenshots`
   writes a PNG of each sheet (needs a Vulkan driver such as lavapipe).
 
+## One phone shell with WordCraft and GridCraft (2026-11-18)
+
+- Sheets: a header (title and Close), sections with headings, engine labels on up to two lines
+  (tiles 76 pt), at most 50 % of the window (60 % under 500 pt tall). More starts with Search and
+  ends with All tools. Insert gains Shapes…, which opens the shape picker.
+- List style (`ui.phoneSheetStyle` `{"style": "list"}`, or Preferences on a phone): no tab bar, a
+  floating quick bar above the chips (New Slide, Text Box, Picture, Bold, Italic, More), list sheets
+  with a tab menu chip that also holds Search and All tools. Both styles draw one model
+  (`phone_sheet::sections`).
+- Top bar 64 pt (48 pt when short), with Save; Undo and Redo are disabled when they have nothing to do.
+- Theme: Light (default), Dark or System (`view.theme` `{"mode"}`); System follows the system's
+  setting live. `view.dark` still works. Preferences shows the three choices.
+- The Android host keeps `ui.json` and `prefs.json` in `settings` in its data folder.
+- Keyboard bar while text is edited, with Done (`text.exit`).
+- File pages on a phone: Save As says Save, Print gives one PDF sentence, Open is one column.
+- All tools: up to 85 % of the window, 16 pt margins, 48 pt form fields, the button names the action.
+- Checks: `cargo clippy -p deckcraft-ui-egui --all-targets -- -D warnings` clean, `cargo test -p
+  deckcraft-ui-egui` 543 passed. Not run: the Android build (no NDK here), the emulator.
+- Not done: the labelled selection bar (1.11), dialogs as bottom sheets (4.3), the font row and
+  colour sub-pages (4.2), layout tile icons, translation (DeckCraft has no translation function yet).
+
 ## Open
 
 - Run it on an emulator and a phone, and fix what breaks.

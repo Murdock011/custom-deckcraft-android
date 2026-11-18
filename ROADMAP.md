@@ -155,6 +155,7 @@ app's JSON control channel (`deckcraft --control PORT`).
 
 | Date | What landed |
 |---|---|
+| 2026-11-18 | Android phone shell shared with WordCraft and GridCraft: sheets in sections with a header and engine labels, a List style option (quick bar, list sheets, tab menu), Save in the top bar, a keyboard bar while text is edited, a Light/Dark/System theme (`view.theme`), settings kept on Android, and phone File pages (Save, one PDF sentence for Print, a one-column Open) |
 | 2026-11-14 | Android keyboard: the host sends `Event::Ime` (new `keyboard.rs`), acknowledges egui's input-method reset, and suggestions replace the word once; slide chips show thumbnails |
 | 2026-11-14 | Android phone UI: a bottom tab bar opens touch sheets (Slides, Insert, Text, Shape, Edit, More) in `crates/ui-egui/src/phone_sheet.rs`; the slide show turns pages on a finger swipe and Back ends it; first arm64 debug APK built (not yet run on a device) |
 | 2026-11-13 | Android spike: `apps/deckcraft-android` hosts the egui UI on android-activity (system file picker, clipboard, soft-keyboard bridge, AutoRecover on pause); a window narrower than 600 pt gets the phone layout (app bar, slide chips, bottom toolbar) in `crates/ui-egui/src/phone.rs`. Gradle packaging is in `packaging/android-native`. Not built on a device or emulator yet |
