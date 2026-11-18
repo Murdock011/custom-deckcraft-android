@@ -50,7 +50,7 @@ const CONTEXTUAL: [&str; 9] =
 /// Height of a list row. Over the 48 pt touch minimum.
 const ROW_H: f32 = 52.0;
 /// The most of the window the tools take.
-const MAX_FRACTION: f32 = 0.56;
+const MAX_FRACTION: f32 = 0.85;
 /// Where a tap-to-insert shape goes: the middle of a standard slide, ready to drag and resize.
 const DEFAULT_RECT: [f64; 4] = [380.0, 200.0, 200.0, 140.0];
 
@@ -439,110 +439,128 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     let mut back_one = false;
     let mut next: Option<Tool> = None;
     let mut ran: Option<(&'static str, Value)> = None;
-    egui::Panel::bottom("phone_tools").exact_size(height).frame(egui::Frame::NONE.fill(t.card)).show(ui, |ui| {
-        ui.painter().hline(ui.max_rect().x_range(), ui.max_rect().min.y, Stroke::new(1.0, t.border));
-        // Header: back, title, close.
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            let btn = |ui: &mut Ui, icon: Icon, label: &str| {
-                let (r, resp) = ui.allocate_exact_size(vec2(52.0, 52.0), Sense::click());
-                resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
-                if resp.is_pointer_button_down_on() {
-                    ui.painter().circle_filled(r.center(), 22.0, t.pressed);
-                }
-                icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), icon, t.text, false);
-                resp.clicked()
-            };
-            if btn(ui, Icon::ChevronLeft, "Back") {
-                back_one = true;
-            }
-            let w = (ui.available_width() - 52.0).max(0.0);
-            let (r, _) = ui.allocate_exact_size(vec2(w, 52.0), Sense::hover());
-            ui.painter().with_clip_rect(r).text(pos2(r.left() + 4.0, r.center().y), Align2::LEFT_CENTER, title_of(&tool), theme::bold(17.0), t.text);
-            if btn(ui, Icon::Close, "Close") {
-                close = true;
-            }
-        });
-        egui::ScrollArea::vertical().id_salt("phone_tools_scroll").auto_shrink([false, false]).show(ui, |ui| match &mut tool {
-            Tool::Tabs => {
-                if list_row(ui, "Search all commands", None, true, true, false) {
-                    next = Some(Tool::Search(String::new()));
-                }
-                section(ui, "Ribbon tabs");
-                for tab in available_tabs(app) {
-                    let n = tab_specs(tab).len();
-                    if list_row(ui, &format!("{}  ({n})", tab_label(tab)), None, true, true, false) {
-                        next = Some(Tool::Tab(tab));
+    egui::Panel::bottom("phone_tools").exact_size(height).frame(egui::Frame::NONE.fill(t.card).inner_margin(egui::Margin::symmetric(16, 0))).show(
+        ui,
+        |ui| {
+            ui.painter().hline(ui.max_rect().x_range(), ui.max_rect().min.y, Stroke::new(1.0, t.border));
+            // Header: back, title, close.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                let btn = |ui: &mut Ui, icon: Icon, label: &str| {
+                    let (r, resp) = ui.allocate_exact_size(vec2(52.0, 52.0), Sense::click());
+                    resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
+                    if resp.is_pointer_button_down_on() {
+                        ui.painter().circle_filled(r.center(), 22.0, t.pressed);
                     }
+                    icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), icon, t.text, false);
+                    resp.clicked()
+                };
+                if btn(ui, Icon::ChevronLeft, "Back") {
+                    back_one = true;
                 }
-            }
-            Tool::Search(q) => {
-                let r = ui.add(egui::TextEdit::singleline(q).hint_text("Search commands").desired_width(f32::INFINITY).font(theme::font(16.0)));
-                let _ = r;
-                let needle = q.trim().to_lowercase();
-                let mut shown = 0;
-                for spec in command_specs().iter().filter(|s| is_action(s)) {
-                    if needle.is_empty() || !(spec.label.to_lowercase().contains(&needle) || spec.id.to_lowercase().contains(&needle)) {
-                        continue;
-                    }
-                    shown += 1;
-                    if shown > 80 {
-                        break;
-                    }
-                    if command_row(app, ui, spec) {
-                        ran = Some((spec.id, Value::Null));
-                    }
-                }
-                if needle.is_empty() {
-                    section(ui, "Type a name, such as fade, table or theme");
-                }
-            }
-            Tool::Tab(tab) => {
-                let mut group: Option<&str> = None;
-                for spec in tab_specs(tab) {
-                    let g = spec.menu.get(1).copied();
-                    if g != group {
-                        group = g;
-                        if let Some(name) = g {
-                            section(ui, name);
-                        }
-                    }
-                    if command_row(app, ui, spec) {
-                        ran = Some((spec.id, Value::Null));
-                    }
-                }
-            }
-            Tool::Pick(p) => {
-                for (params, label) in &p.options {
-                    if list_row(ui, label, None, false, true, false) {
-                        ran = Some((p.id, params.clone()));
-                    }
-                }
-            }
-            Tool::Input(i) => {
-                for (name, about, value) in &mut i.fields {
-                    ui.add_space(8.0);
-                    ui.label(egui::RichText::new(readable(name)).font(theme::font(13.0)).color(t.text.gamma_multiply(0.7)));
-                    ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY).font(theme::font(16.0)).hint_text(about.as_str()));
-                }
-                ui.add_space(14.0);
-                let b = ui.add(
-                    egui::Button::new(egui::RichText::new("Run").color(t.accent_text).size(16.0))
-                        .fill(t.accent)
-                        .min_size(vec2(ui.available_width(), 52.0)),
+                let w = (ui.available_width() - 52.0).max(0.0);
+                let (r, _) = ui.allocate_exact_size(vec2(w, 52.0), Sense::hover());
+                ui.painter().with_clip_rect(r).text(
+                    pos2(r.left() + 4.0, r.center().y),
+                    Align2::LEFT_CENTER,
+                    title_of(&tool),
+                    theme::bold(17.0),
+                    t.text,
                 );
-                if b.clicked() {
-                    let mut params = i.fixed.clone();
-                    for (name, _, value) in &i.fields {
-                        if !value.trim().is_empty() {
-                            params[name] = parse_value(value);
+                if btn(ui, Icon::Close, "Close") {
+                    close = true;
+                }
+            });
+            egui::ScrollArea::vertical().id_salt("phone_tools_scroll").auto_shrink([false, false]).show(ui, |ui| match &mut tool {
+                Tool::Tabs => {
+                    if list_row(ui, "Search all commands", None, true, true, false) {
+                        next = Some(Tool::Search(String::new()));
+                    }
+                    section(ui, "Ribbon tabs");
+                    for tab in available_tabs(app) {
+                        let n = tab_specs(tab).len();
+                        if list_row(ui, &format!("{}  ({n})", tab_label(tab)), None, true, true, false) {
+                            next = Some(Tool::Tab(tab));
                         }
                     }
-                    ran = Some((i.id, params));
                 }
-            }
-        });
-    });
+                Tool::Search(q) => {
+                    let r = ui.add(egui::TextEdit::singleline(q).hint_text("Search commands").desired_width(f32::INFINITY).font(theme::font(16.0)));
+                    let _ = r;
+                    let needle = q.trim().to_lowercase();
+                    let mut shown = 0;
+                    for spec in command_specs().iter().filter(|s| is_action(s)) {
+                        if needle.is_empty() || !(spec.label.to_lowercase().contains(&needle) || spec.id.to_lowercase().contains(&needle)) {
+                            continue;
+                        }
+                        shown += 1;
+                        if shown > 80 {
+                            break;
+                        }
+                        if command_row(app, ui, spec) {
+                            ran = Some((spec.id, Value::Null));
+                        }
+                    }
+                    if needle.is_empty() {
+                        section(ui, "Type a name, such as fade, table or theme");
+                    }
+                }
+                Tool::Tab(tab) => {
+                    let mut group: Option<&str> = None;
+                    for spec in tab_specs(tab) {
+                        let g = spec.menu.get(1).copied();
+                        if g != group {
+                            group = g;
+                            if let Some(name) = g {
+                                section(ui, name);
+                            }
+                        }
+                        if command_row(app, ui, spec) {
+                            ran = Some((spec.id, Value::Null));
+                        }
+                    }
+                }
+                Tool::Pick(p) => {
+                    for (params, label) in &p.options {
+                        if list_row(ui, label, None, false, true, false) {
+                            ran = Some((p.id, params.clone()));
+                        }
+                    }
+                }
+                Tool::Input(i) => {
+                    for (name, about, value) in &mut i.fields {
+                        ui.add_space(8.0);
+                        // The label above its field; the field 48 pt tall and as wide as the sheet.
+                        let l = ui.label(egui::RichText::new(readable(name)).font(theme::font(13.0)).color(t.text.gamma_multiply(0.7)));
+                        ui.add(
+                            egui::TextEdit::singleline(value)
+                                .desired_width(f32::INFINITY)
+                                .min_size(vec2(0.0, 48.0))
+                                .font(theme::font(16.0))
+                                .hint_text(about.as_str()),
+                        )
+                        .labelled_by(l.id);
+                    }
+                    ui.add_space(14.0);
+                    let b = ui.add(
+                        // The button names the action: the command's own label.
+                        egui::Button::new(egui::RichText::new(i.title.trim_end_matches('…')).color(t.accent_text).size(16.0))
+                            .fill(t.accent)
+                            .min_size(vec2(ui.available_width(), 52.0)),
+                    );
+                    if b.clicked() {
+                        let mut params = i.fixed.clone();
+                        for (name, _, value) in &i.fields {
+                            if !value.trim().is_empty() {
+                                params[name] = parse_value(value);
+                            }
+                        }
+                        ran = Some((i.id, params));
+                    }
+                }
+            });
+        },
+    );
     // What was tapped, applied after drawing.
     if let Some((id, params)) = ran {
         if params.is_null() {
