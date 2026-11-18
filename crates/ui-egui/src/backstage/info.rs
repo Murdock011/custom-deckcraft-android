@@ -221,7 +221,8 @@ pub(super) fn save_as(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: 
         }
         // A page that keeps the files (`host_save`) saves; plain web downloads.
         let web = app.services.pick_save.is_none() && app.services.host_save.is_none();
-        let label = if web { "Download" } else { "Save" };
+        // A phone always says Save: Android saves through the system's file dialog.
+        let label = if web && !phone { "Download" } else { "Save" };
         let size = if phone { vec2(ui.available_width(), 52.0) } else { vec2(84.0, 26.0) };
         let save = ui.add(egui::Button::new(RichText::new(label).color(t.accent_text)).fill(t.accent).min_size(size));
         if save

@@ -285,6 +285,32 @@ pub(super) fn new_page(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
 /// Open: Recent and Browse on the left; the recent presentations (with a search box) on the right.
 pub(super) fn open_page(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
     let t = Tokens::get(ui.ctx());
+    // A phone: one column. Browse… as a full-width button, Recover, then the recent presentations.
+    if crate::phone::active(ui.ctx()) {
+        let w = ui.available_width();
+        let browse = ui.add(egui::Button::new(egui::RichText::new("Browse…").color(t.accent_text)).fill(t.accent).min_size(vec2(w, 48.0)));
+        if browse.clicked() {
+            let _ = app.run("app.openDialog", json!({}));
+        }
+        if app.session.recovery_dir.is_some() {
+            ui.add_space(8.0);
+            if ui.add(egui::Button::new("Recover Unsaved Presentations").min_size(vec2(w, 48.0))).clicked() {
+                match app.run("file.recovery.open", json!({})) {
+                    Ok(v) if v.get("opened").and_then(Value::as_array).is_some_and(|a| a.is_empty()) => {
+                        app.set_status("There are no unsaved presentations to recover");
+                    }
+                    _ => {}
+                }
+            }
+        }
+        ui.add_space(16.0);
+        heading(ui, "Recent");
+        search(ui, &mut bs.query, "Search for a file", w);
+        ui.add_space(8.0);
+        let q = bs.query.clone();
+        recent_list(app, ui, &q, usize::MAX);
+        return;
+    }
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(230.0);

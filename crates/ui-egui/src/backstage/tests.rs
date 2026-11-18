@@ -880,3 +880,21 @@ fn on_a_phone_save_as_lists_every_file_type() {
     h.run_steps(2);
     assert_eq!(h.state().backstage.as_ref().map(|b| b.file_type), Some("deckcraft"), "a tap chooses the type");
 }
+
+/// On a phone, Save As says Save (Android saves through the system's file dialog, not a download),
+/// Print gives the one PDF sentence, and Open is one column with Browse… first.
+#[test]
+fn on_a_phone_save_as_print_and_open_follow_the_phone_shell() {
+    let mut h = phone_harness();
+    h.state_mut().open_backstage(Page::SaveAs);
+    h.run_steps(3);
+    assert!(h.query_all_by_role_and_label(Role::Button, "Save").next().is_some(), "Save As saves");
+    assert!(h.query_by_label("Download").is_none(), "no Download on a phone");
+    h.state_mut().open_backstage(Page::Print);
+    h.run_steps(3);
+    assert!(h.query_by_label("Printing goes through a PDF. Save the PDF, then print it from a PDF viewer.").is_some());
+    h.state_mut().open_backstage(Page::Open);
+    h.run_steps(3);
+    let browse = h.get_by_role_and_label(Role::Button, "Browse…").rect();
+    assert!(browse.width() > 300.0, "Browse… spans the page: {browse:?}");
+}
