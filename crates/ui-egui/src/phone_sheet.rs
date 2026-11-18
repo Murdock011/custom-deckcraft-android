@@ -1161,6 +1161,22 @@ mod style_tests {
         assert_eq!(layout, Some("Title Slide"), "a tile with fixed values keeps its own label");
     }
 
+    /// While text is edited the keyboard bar replaces the tab bar and sheet; Done ends the edit.
+    #[test]
+    fn keyboard_bar_while_editing_text() {
+        let mut h = harness(false);
+        h.state_mut().phone_sheet = Some(Sheet::Insert);
+        let id = h.state().session.active().and_then(|d| d.doc.slides.first().and_then(|s| s.shapes.first().map(|sh| sh.id.0)));
+        h.state_mut().run("text.edit", json!({"id": id})).expect("edit the title's text");
+        h.run_steps(3);
+        assert!(has(&h, "Done") && has(&h, "Bold") && has(&h, "Larger"), "the keyboard bar shows");
+        assert!(!has(&h, "Slides"), "the tab bar hides while typing");
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "Done").click();
+        h.run_steps(3);
+        assert!(!crate::phone::editing_text(h.state()), "Done ends the edit");
+        assert!(has(&h, "Slides"), "the tab bar returns");
+    }
+
     /// `view.theme` sets Light, Dark or System, and `ui.phoneSheetStyle` the sheet style.
     #[test]
     fn theme_and_style_commands() {

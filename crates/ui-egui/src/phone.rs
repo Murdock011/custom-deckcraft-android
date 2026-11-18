@@ -92,6 +92,11 @@ pub fn top_bar(app: &mut SlideApp, ui: &mut Ui) {
 pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some((doc, current)) = app.session.active().map(|d| (d.doc.clone(), d.selection.slide)) else { return };
+    // While text is edited the keyboard is up: the keyboard bar takes the bottom, alone.
+    if editing_text(app) {
+        keyboard_bar(app, ui);
+        return;
+    }
     // Tiles: the tab bar at the bottom, the sheet above it. List: no tab bar; the sheet at the
     // bottom, or the floating quick bar above the slide chips while no sheet is open.
     let list = phone_sheet::list_style(app);
@@ -137,6 +142,63 @@ pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
     }
     if pending {
         ui.ctx().request_repaint();
+    }
+}
+
+/// Whether text is being edited (the on-screen keyboard is up for it).
+pub fn editing_text(app: &SlideApp) -> bool {
+    app.show.is_none() && app.session.active().is_some_and(|d| d.selection.text.is_some())
+}
+
+/// Height of the keyboard bar.
+const KEYBOARD_BAR_H: f32 = 56.0;
+
+/// The keyboard bar, on the keyboard while text is edited: the character and paragraph formats,
+/// scrolling sideways when they do not fit, and Done at the fixed right end, which ends the edit.
+fn keyboard_bar(app: &mut SlideApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let st = crate::ribbon::fmt_state(app);
+    let flag = |k: &str| st.get(k).and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let buttons = [
+        (Icon::Bold, "Bold", "format.bold", flag("bold")),
+        (Icon::Italic, "Italic", "format.italic", flag("italic")),
+        (Icon::Underline, "Underline", "format.underline", flag("underline")),
+        (Icon::Bullets, "Bullets", "format.bullets", false),
+        (Icon::Numbering, "Numbering", "format.numbering", false),
+        (Icon::DecreaseIndent, "Decrease Indent", "format.outdent", false),
+        (Icon::IncreaseIndent, "Increase Indent", "format.indent", false),
+        (Icon::FontShrink, "Smaller", "format.shrink", false),
+        (Icon::FontGrow, "Larger", "format.grow", false),
+    ];
+    let mut ran: Option<&str> = None;
+    let mut done = false;
+    egui::Panel::bottom("phone_keyboard_bar").exact_size(KEYBOARD_BAR_H).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+        ui.painter().hline(ui.max_rect().x_range(), ui.max_rect().min.y, Stroke::new(1.0, t.border));
+        ui.horizontal_centered(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let middle = (ui.available_width() - TOUCH_H - 12.0).max(TOUCH_H);
+            egui::ScrollArea::horizontal().id_salt("phone_keyboard_bar").max_width(middle).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for (icon, label, id, on) in buttons {
+                        if icon_button(ui, icon, label, crate::ribbon::enabled(app, id), on).clicked() {
+                            ran = Some(id);
+                        }
+                    }
+                });
+            });
+            let (r, _) = ui.allocate_exact_size(vec2(12.0, 24.0), Sense::hover());
+            ui.painter().vline(r.center().x, r.y_range(), Stroke::new(1.0, t.border));
+            if icon_button(ui, Icon::Check, "Done", true, false).clicked() {
+                done = true;
+            }
+        });
+    });
+    if let Some(id) = ran {
+        let _ = app.run(id, json!({}));
+    }
+    if done {
+        let _ = app.run("text.exit", json!({}));
     }
 }
 
