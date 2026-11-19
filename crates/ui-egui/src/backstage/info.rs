@@ -121,6 +121,10 @@ pub(super) fn info(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
             heading(ui, "Properties");
             let props = v.get("properties").cloned().unwrap_or_default();
             let size = v.get("bytes").and_then(Value::as_u64).map(format_bytes);
+            if phone {
+                phone_properties(app, ui, bs, &v, size, path.clone());
+                return;
+            }
             egui::Grid::new("backstage_props").num_columns(2).spacing(vec2(18.0, 7.0)).show(ui, |ui| {
                 let row = |ui: &mut Ui, k: &str, val: String| {
                     ui.label(RichText::new(k).color(t.text_dim));
@@ -156,6 +160,41 @@ pub(super) fn info(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
             });
         });
     });
+}
+
+/// Info's properties on a phone: each label above its value or field, the fields as wide as the
+/// page and 48 pt tall. A field commits as on the desktop, when it loses the focus.
+fn phone_properties(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, v: &Value, size: Option<String>, path: Option<String>) {
+    let t = Tokens::get(ui.ctx());
+    let props = v.get("properties").cloned().unwrap_or_default();
+    let fact = |ui: &mut Ui, k: &str, val: String| {
+        ui.label(RichText::new(k).color(t.text_dim));
+        ui.label(val);
+        ui.add_space(8.0);
+    };
+    if let Some(s) = size {
+        fact(ui, "Size", s);
+    }
+    fact(ui, "Slides", v.get("slides").and_then(Value::as_u64).unwrap_or(0).to_string());
+    fact(ui, "Hidden slides", v.get("hiddenSlides").and_then(Value::as_u64).unwrap_or(0).to_string());
+    for (i, (key, label, hint)) in PROPERTIES.iter().enumerate() {
+        let saved = props.get(*key).and_then(Value::as_str).unwrap_or("").to_string();
+        let Some(draft) = bs.props.get_mut(i) else { continue };
+        let l = ui.label(RichText::new(*label).color(t.text_dim));
+        let id = ui.make_persistent_id(("backstage_prop", *key));
+        let edit = egui::TextEdit::singleline(draft).id(id).hint_text(*hint).desired_width(f32::INFINITY);
+        let resp = ui.add(crate::phone_dialog::touch_edit(ui, edit)).labelled_by(l.id);
+        if resp.lost_focus() && *draft != saved {
+            let mut p = serde_json::Map::new();
+            p.insert((*key).to_string(), json!(draft.clone()));
+            let _ = app.run("file.properties", Value::Object(p));
+        } else if !resp.has_focus() && *draft != saved {
+            draft.clone_from(&saved);
+            ui.ctx().request_repaint();
+        }
+        ui.add_space(8.0);
+    }
+    fact(ui, "Location", path.unwrap_or_else(|| "Not saved yet".into()));
 }
 
 /// Commits what the Info page's property fields hold and the presentation does not: a side-menu

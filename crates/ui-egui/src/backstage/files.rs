@@ -155,6 +155,27 @@ fn recent_list(app: &mut SlideApp, ui: &mut Ui, query: &str, limit: usize) {
 /// A large square command button (Print, Create PDF, Check for Issues…).
 pub(super) fn square_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
+    // A phone: one full-width 48 pt button, the action's icon and name in the accent colour.
+    if crate::phone::is_phone_size(ui.ctx().content_rect().size()) {
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 48.0), if enabled { Sense::click() } else { Sense::hover() });
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
+        let p = ui.painter();
+        let fill = if !enabled {
+            t.hover
+        } else if resp.is_pointer_button_down_on() {
+            t.accent.gamma_multiply(0.8)
+        } else {
+            t.accent
+        };
+        p.rect_filled(rect, CornerRadius::same(24), fill);
+        let ink = if enabled { t.accent_text } else { t.text_faint };
+        let text = p.layout_no_wrap(label.replace('\n', " "), theme::font(15.0), ink);
+        let w = 24.0 + 8.0 + text.size().x;
+        let x = rect.center().x - w / 2.0;
+        icons::paint(p, Rect::from_center_size(pos2(x + 12.0, rect.center().y), vec2(22.0, 22.0)), icon, ink, !enabled);
+        p.galley(pos2(x + 32.0, rect.center().y - text.size().y / 2.0), text, ink);
+        return resp;
+    }
     let (rect, resp) = ui.allocate_exact_size(vec2(88.0, 80.0), if enabled { Sense::click() } else { Sense::hover() });
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
     let p = ui.painter();
@@ -188,6 +209,15 @@ pub(super) fn place_row(ui: &mut Ui, icon: Icon, label: &str, selected: bool, wi
 pub(super) fn task(ui: &mut Ui, icon: Icon, button: &str, title: &str, detail: &str, enabled: bool) -> bool {
     let t = Tokens::get(ui.ctx());
     let mut clicked = false;
+    // A phone: the title and description, then the action as a full-width button under them.
+    if crate::phone::is_phone_size(ui.ctx().content_rect().size()) {
+        ui.label(RichText::new(title).font(theme::font(15.0)).color(t.text));
+        dim(ui, detail);
+        ui.add_space(6.0);
+        clicked = square_button(ui, icon, button, enabled).clicked();
+        ui.add_space(18.0);
+        return clicked;
+    }
     ui.horizontal_top(|ui| {
         clicked = square_button(ui, icon, button, enabled).clicked();
         ui.add_space(12.0);
