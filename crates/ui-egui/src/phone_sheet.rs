@@ -1177,6 +1177,44 @@ mod style_tests {
         assert!(has(&h, "Slides"), "the tab bar returns");
     }
 
+    /// A long press (a secondary click here) on the slide opens the selection bar, not the context
+    /// menu. Duplicate runs and closes it; More opens the rest; Back closes More, then the bar.
+    #[test]
+    fn long_press_opens_the_selection_bar() {
+        let mut h = harness(false);
+        let id = h.state().session.active().and_then(|d| d.doc.slides.first().and_then(|s| s.shapes.first().map(|sh| sh.id.0)));
+        h.state_mut().run("edit.select", json!({"ids": [id]})).expect("select the title");
+        h.run_steps(2);
+        let at = pos2(180.0, 200.0);
+        for pressed in [true, false] {
+            h.input_mut().events.extend([
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE },
+            ]);
+            h.run_steps(1);
+        }
+        h.run_steps(2);
+        assert!(h.state().phone_select.is_some(), "the selection bar opened");
+        for name in ["Cut", "Copy", "Paste", "Duplicate", "More actions"] {
+            assert!(has(&h, name), "{name} is on the bar");
+        }
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "More actions").click();
+        h.run_steps(2);
+        assert!(has(&h, "Bring to Front") && has(&h, "Alt Text…"), "More lists the rest");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(2);
+        assert_eq!(h.state().phone_select.map(|b| b.more), Some(false), "Back closes More first");
+        let count = |h: &H| h.state().session.active().and_then(|d| d.doc.slides.first().map(|s| s.shapes.len())).unwrap_or(0);
+        // The press may have landed beside the title: select it again, as a press on it would.
+        h.state_mut().run("edit.select", json!({"ids": [id]})).expect("select the title");
+        h.run_steps(2);
+        let before = count(&h);
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "Duplicate").click();
+        h.run_steps(2);
+        assert_eq!(count(&h), before + 1, "Duplicate ran");
+        assert!(h.state().phone_select.is_none(), "an action closes the bar");
+    }
+
     /// `view.theme` sets Light, Dark or System, and `ui.phoneSheetStyle` the sheet style.
     #[test]
     fn theme_and_style_commands() {

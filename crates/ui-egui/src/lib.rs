@@ -238,6 +238,9 @@ pub struct SlideApp {
     pub phone_sheet: Option<phone_sheet::Sheet>,
     /// The phone's all-tools screens, innermost last (Back closes one).
     pub phone_tools: Vec<phone_tools::Tool>,
+    /// The phone's selection bar after a long press: where the finger was, and whether its More
+    /// list is open.
+    pub phone_select: Option<phone::SelectBar>,
     /// The word looked up in the Thesaurus pane.
     pub thesaurus_query: String,
     pub show: Option<show::Show>,

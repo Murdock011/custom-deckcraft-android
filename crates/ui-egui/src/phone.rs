@@ -145,6 +145,111 @@ pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
     }
 }
 
+/// The selection bar after a long press: where the finger was, and whether More is open.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SelectBar {
+    pub at: egui::Pos2,
+    pub more: bool,
+}
+
+/// The selection bar's buttons: 72 pt wide, an icon over a label, 64 pt tall.
+const SELECT_W: f32 = 72.0;
+const SELECT_H: f32 = 64.0;
+
+/// The selection bar (plan 1.11): after a long press, four actions and More near the finger. More
+/// opens a list of the rest under the bar. An action closes the bar; so do Back and a tap on the slide.
+pub fn selection_bar(app: &mut SlideApp, ctx: &Context) {
+    let Some(bar) = app.phone_select else { return };
+    if app.show.is_some() || app.dialog.is_some() {
+        app.phone_select = None;
+        return;
+    }
+    let t = Tokens::get(ctx);
+    let editing = editing_text(app);
+    let actions: [(Icon, &str, &str, serde_json::Value); 4] = [
+        (Icon::Cut, "Cut", "edit.cut", json!({})),
+        (Icon::Copy, "Copy", "edit.copy", json!({})),
+        (Icon::Paste, "Paste", "edit.paste", json!({})),
+        if editing {
+            (Icon::Object, "Select All", "text.selectAll", json!({}))
+        } else {
+            (Icon::DuplicateSlide, "Duplicate", "edit.duplicate", json!({}))
+        },
+    ];
+    let more_rows: [(Icon, &str, &str, serde_json::Value); 6] = [
+        (Icon::Close, "Delete", "edit.delete", json!({})),
+        (Icon::BringToFront, "Bring to Front", "arrange.bringToFront", json!({})),
+        (Icon::SendToBack, "Send to Back", "arrange.sendToBack", json!({})),
+        (Icon::Group, "Group", "arrange.group", json!({})),
+        (Icon::Ungroup, "Ungroup", "arrange.ungroup", json!({})),
+        (Icon::AltText, "Alt Text…", "app.dialog", json!({"id": "altText"})),
+    ];
+    let screen = ctx.content_rect();
+    let width = SELECT_W * 5.0 + 8.0;
+    // Above the finger, kept on the screen; below it when there is no room above.
+    let x = (bar.at.x - width / 2.0).clamp(screen.left() + 8.0, (screen.right() - width - 8.0).max(screen.left() + 8.0));
+    let above = bar.at.y - SELECT_H - 40.0;
+    let y = if above > screen.top() + 72.0 { above } else { (bar.at.y + 40.0).min(screen.bottom() - SELECT_H - 8.0) };
+    let mut ran: Option<(&'static str, serde_json::Value)> = None;
+    let mut toggle_more = false;
+    egui::Area::new(egui::Id::unique("phone_select_bar")).fixed_pos(pos2(x, y)).order(egui::Order::Foreground).show(ctx, |ui| {
+        egui::Frame::NONE
+            .fill(t.card)
+            .corner_radius(CornerRadius::same(16))
+            .shadow(egui::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(60) })
+            .inner_margin(egui::Margin::same(4))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    // `name` is the accessible name; `label` the text under the icon.
+                    let button = |ui: &mut Ui, icon: Icon, label: &str, name: &str, enabled: bool, on: bool| -> bool {
+                        let (r, resp) = ui.allocate_exact_size(vec2(SELECT_W, SELECT_H), if enabled { Sense::click() } else { Sense::hover() });
+                        resp.widget_info(|| WidgetInfo::selected(egui::Role::Button, enabled, on, name));
+                        if enabled && resp.is_pointer_button_down_on() || on {
+                            ui.painter().rect_filled(r.shrink(2.0), CornerRadius::same(12), if on { t.selected } else { t.pressed });
+                        }
+                        let ink = if enabled { t.text } else { t.text.gamma_multiply(0.45) };
+                        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.center().x, r.top() + 22.0), vec2(24.0, 24.0)), icon, ink, !enabled);
+                        ui.painter().text(pos2(r.center().x, r.bottom() - 14.0), Align2::CENTER_CENTER, label, theme::font(12.0), ink);
+                        resp.clicked() && enabled
+                    };
+                    for (icon, label, id, params) in &actions {
+                        if button(ui, *icon, label, label, crate::ribbon::enabled(app, id), false) {
+                            ran = Some((id, params.clone()));
+                        }
+                    }
+                    if button(ui, Icon::More, "More", "More actions", true, bar.more) {
+                        toggle_more = true;
+                    }
+                });
+                if bar.more {
+                    ui.separator();
+                    for (icon, label, id, params) in &more_rows {
+                        let en = crate::ribbon::enabled(app, id);
+                        let (r, resp) = ui.allocate_exact_size(vec2(width - 8.0, 52.0), if en { Sense::click() } else { Sense::hover() });
+                        resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, en, *label));
+                        if en && resp.is_pointer_button_down_on() {
+                            ui.painter().rect_filled(r, CornerRadius::same(12), t.pressed);
+                        }
+                        let ink = if en { t.text } else { t.text.gamma_multiply(0.45) };
+                        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.left() + 24.0, r.center().y), vec2(24.0, 24.0)), *icon, ink, !en);
+                        ui.painter().text(pos2(r.left() + 56.0, r.center().y), Align2::LEFT_CENTER, *label, theme::font(16.0), ink);
+                        if resp.clicked() && en {
+                            ran = Some((id, params.clone()));
+                        }
+                    }
+                }
+            });
+    });
+    if toggle_more && let Some(b) = &mut app.phone_select {
+        b.more = !b.more;
+    }
+    if let Some((id, params)) = ran {
+        app.phone_select = None;
+        let _ = app.run(id, params);
+    }
+}
+
 /// Whether text is being edited (the on-screen keyboard is up for it).
 pub fn editing_text(app: &SlideApp) -> bool {
     app.show.is_none() && app.session.active().is_some_and(|d| d.selection.text.is_some())
