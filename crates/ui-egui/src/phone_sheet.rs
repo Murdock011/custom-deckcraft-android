@@ -998,7 +998,8 @@ pub fn quick_bar(app: &mut SlideApp, ui: &mut Ui) {
     let mut more = false;
     egui::Panel::bottom("phone_quick_bar")
         .exact_size(TOUCH_H + 8.0 + 16.0)
-        .frame(egui::Frame::NONE.inner_margin(egui::Margin { left: GUTTER as i8, right: GUTTER as i8, top: 0, bottom: 16 }))
+        // The strip around the pill takes the canvas colour: with no fill it showed black on Android.
+        .frame(egui::Frame::NONE.fill(t.canvas).inner_margin(egui::Margin { left: GUTTER as i8, right: GUTTER as i8, top: 0, bottom: 16 }))
         .show(ui, |ui| {
             let bar = ui.max_rect();
             ui.painter().add(
