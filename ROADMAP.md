@@ -155,6 +155,7 @@ app's JSON control channel (`deckcraft --control PORT`).
 
 | Date | What landed |
 |---|---|
+| 2026-11-19 | Android phone: a selection bar after a long press, every dialog as a bottom sheet (all 42 checked at 360 pt), the Text sheet's font row, colour, Outline and Align pages, layout pictures on the Layout tiles, full-width File page actions |
 | 2026-11-18 | Android phone shell shared with WordCraft and GridCraft: sheets in sections with a header and engine labels, a List style option (quick bar, list sheets, tab menu), Save in the top bar, a keyboard bar while text is edited, a Light/Dark/System theme (`view.theme`), settings kept on Android, and phone File pages (Save, one PDF sentence for Print, a one-column Open) |
 | 2026-11-14 | Android keyboard: the host sends `Event::Ime` (new `keyboard.rs`), acknowledges egui's input-method reset, and suggestions replace the word once; slide chips show thumbnails |
 | 2026-11-14 | Android phone UI: a bottom tab bar opens touch sheets (Slides, Insert, Text, Shape, Edit, More) in `crates/ui-egui/src/phone_sheet.rs`; the slide show turns pages on a finger swipe and Back ends it; first arm64 debug APK built (not yet run on a device) |

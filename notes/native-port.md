@@ -90,8 +90,14 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - All tools: up to 85 % of the window, 16 pt margins, 48 pt form fields, the button names the action.
 - Checks: `cargo clippy -p deckcraft-ui-egui --all-targets -- -D warnings` clean, `cargo test -p
   deckcraft-ui-egui` 543 passed. Not run: the Android build (no NDK here), the emulator.
-- Not done: the labelled selection bar (1.11), dialogs as bottom sheets (4.3), the font row and
-  colour sub-pages (4.2), layout tile icons, translation (DeckCraft has no translation function yet).
+- Done later (2026-11-19): the selection bar after a long press (Cut, Copy, Paste, Duplicate and
+  More; no desktop context menu on a phone); every dialog as a bottom sheet (`phone_dialog.rs`)
+  with a pinned Cancel and action, checked at 360 pt for all 42 dialogs; the Text sheet's font row;
+  colour pages (Font Color, Fill with No Fill, Highlight with No Color); Outline (No Outline,
+  colours, weights) and Align pages; a picture for each layout tile; full-width actions and labels
+  above the Info fields on the File pages.
+- Not done: translation (DeckCraft has no translation function yet), thumbnail galleries and a
+  colour picker in All tools forms, a test that walks the whole Back order.
 
 ## Open
 
