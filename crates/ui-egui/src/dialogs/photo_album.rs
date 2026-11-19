@@ -151,9 +151,9 @@ fn with_selected_picture(d: &mut Dialog, f: impl FnOnce(&mut serde_json::Map<Str
 /// Photo Album. Returns true when the dialog should close.
 pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     seed_photo_album(app, d);
-    ui.set_min_width(440.0);
+    super::min_width(ui, 440.0);
     egui::ScrollArea::vertical().max_height(520.0).id_salt("album_body").show(ui, |ui| {
-        ui.set_min_width(420.0);
+        super::min_width(ui, 420.0);
         ui.label("Pictures in album");
         let items = album_items(d).unwrap_or_default();
         let mut sel = d.get("sel", "0").parse::<usize>().unwrap_or(0);
@@ -169,7 +169,7 @@ pub(super) fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
             }
         });
         d.fields.insert("sel".into(), sel.to_string());
-        ui.horizontal(|ui| {
+        super::row(ui, |ui| {
             if ui.button("Add Pictures…").clicked()
                 && let Some(item) = pick_album_picture(app)
             {

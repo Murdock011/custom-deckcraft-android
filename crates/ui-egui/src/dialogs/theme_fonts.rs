@@ -71,11 +71,11 @@ pub(super) fn theme_fonts_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
     let bodies = theme_font_choices(app, &minor);
     let mut major = major;
     let mut minor = minor;
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(110.0, 18.0), egui::Label::new("Heading:"));
         font_combo(ui, "Heading font", &headings, &mut major);
     });
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(110.0, 18.0), egui::Label::new("Body:"));
         font_combo(ui, "Body font", &bodies, &mut minor);
     });
@@ -88,9 +88,9 @@ pub(super) fn theme_fonts_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog
     ui.label(egui::RichText::new(format!("Body sample  {minor}")).size(14.0));
     ui.add_space(4.0);
     let mut name = d.get("schemeName", "");
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(110.0, 18.0), egui::Label::new("Name:"));
-        let resp = ui.add(egui::TextEdit::singleline(&mut name).desired_width(240.0).id_salt("schemeName"));
+        let resp = ui.add(egui::TextEdit::singleline(&mut name).desired_width(super::width(ui, 240.0)).id_salt("schemeName"));
         let shown = name.clone();
         resp.widget_info(move || {
             let mut info = egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Scheme name");

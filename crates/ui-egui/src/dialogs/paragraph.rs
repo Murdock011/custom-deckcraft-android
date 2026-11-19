@@ -55,9 +55,9 @@ fn line_preset_label(kind: &str, value: &str) -> &'static str {
 
 /// Home › Paragraph launcher. One OK applies alignment, indentation and spacing together.
 pub(super) fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
-    ui.set_min_width(460.0);
+    super::min_width(ui, 460.0);
     seed_paragraph_fields(d);
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(110.0, 20.0), egui::Label::new("Alignment"));
         choice(
             ui,
@@ -76,14 +76,14 @@ pub(super) fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) 
         );
     });
     ui.label(egui::RichText::new("Indentation").strong());
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         let _ = labeled_text(ui, d, "Before text", "before", 64.0);
         ui.label("in");
         ui.add_space(12.0);
         let _ = labeled_text(ui, d, "After text", "after", 64.0);
         ui.label("in");
     });
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(110.0, 20.0), egui::Label::new("Special"));
         choice(ui, d, "paragraph_special", "Special", "special", &[("none", "None"), ("first", "First line"), ("hanging", "Hanging")]);
         ui.add_space(8.0);
@@ -91,7 +91,7 @@ pub(super) fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) 
         ui.label("in");
     });
     ui.label(egui::RichText::new("Spacing").strong());
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         let _ = labeled_text(ui, d, "Spacing before", "spaceBefore", 64.0);
         ui.label("pt");
         ui.add_space(12.0);
@@ -99,7 +99,7 @@ pub(super) fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) 
         ui.label("pt");
     });
     let mut picked: Option<(&'static str, Option<&'static str>)> = None;
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         let field = ui.add_sized(vec2(110.0, 20.0), egui::Label::new("Line spacing"));
         let kind = d.get("lineKind", "multiple");
         let value = d.get("lineValue", "1");
@@ -132,7 +132,7 @@ pub(super) fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) 
         }
     }
     let mut open_tabs = false;
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         if ui.button("Tabs…").clicked() {
             open_tabs = true;
         }

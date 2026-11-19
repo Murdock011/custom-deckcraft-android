@@ -53,6 +53,7 @@ mod clock;
 mod ime_hooks;
 pub mod panels;
 mod phone;
+mod phone_dialog;
 mod phone_sheet;
 mod phone_tools;
 mod services;

@@ -197,7 +197,7 @@ fn dlg_hyperlink(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     let seed = hyperlink_seed_of(app.session.active());
     let slide_default = seed.slide.to_string();
     let mode = d.get("mode", seed.mode);
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         if ui.selectable_label(mode == "url", "Web Page or File").clicked() {
             d.fields.insert("mode".into(), "url".into());
         }
@@ -357,7 +357,7 @@ fn dlg_close(app: &mut SlideApp, ui: &mut Ui, _d: &mut Dialog) -> bool {
 
 fn dlg_comment(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     let mut v = d.get("text", "");
-    ui.add(egui::TextEdit::multiline(&mut v).hint_text("Comment").desired_rows(4).desired_width(320.0));
+    ui.add(egui::TextEdit::multiline(&mut v).hint_text("Comment").desired_rows(4).desired_width(super::width(ui, 320.0)));
     d.fields.insert("text".into(), v.clone());
     let (ok, cancel) = buttons(ui, "Post");
     if ok && !v.trim().is_empty() {
@@ -607,7 +607,7 @@ fn dlg_alt_text(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         .unwrap_or_default();
     ui.label("How would you describe this object and its context to someone who is blind or has low vision?");
     let mut v = d.get("text", &cur);
-    ui.add(egui::TextEdit::multiline(&mut v).hint_text("Alt text").desired_rows(4).desired_width(340.0));
+    ui.add(egui::TextEdit::multiline(&mut v).hint_text("Alt text").desired_rows(4).desired_width(super::width(ui, 340.0)));
     d.fields.insert("text".into(), v.clone());
     let deco = check(ui, d, "Mark as decorative", "deco", deco_now);
     let (ok, cancel) = buttons(ui, "OK");
@@ -620,7 +620,7 @@ fn dlg_alt_text(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
 fn dlg_outline(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     ui.label("Paste or type an outline. Unindented lines become slide titles; tab-indented lines become bullets.");
     let mut v = d.get("text", "");
-    ui.add(egui::TextEdit::multiline(&mut v).hint_text("Outline").desired_rows(10).desired_width(380.0).code_editor());
+    ui.add(egui::TextEdit::multiline(&mut v).hint_text("Outline").desired_rows(10).desired_width(super::width(ui, 380.0)).code_editor());
     d.fields.insert("text".into(), v.clone());
     let (ok, cancel) = buttons(ui, "Insert");
     if ok {
@@ -823,7 +823,7 @@ fn dlg_replace_fonts(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         ui.end_row();
         ui.label("With:");
         ui.vertical(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut to).desired_width(240.0).hint_text("Font name"));
+            ui.add(egui::TextEdit::singleline(&mut to).desired_width(super::width(ui, 240.0)).hint_text("Font name"));
             let needle = to.trim().to_lowercase();
             egui::ScrollArea::vertical().max_height(140.0).id_salt("rf_list").show(ui, |ui| {
                 for f in crate::ribbon::font_families(app).iter().filter(|f| needle.is_empty() || f.to_lowercase().contains(&needle)).take(200) {
@@ -882,7 +882,7 @@ fn dlg_symbol(app: &mut SlideApp, ui: &mut Ui, _d: &mut Dialog) -> bool {
 fn dlg_equation(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     ui.label("Type an equation in linear form (e.g. a^2+b^2=c^2, x=(-b±√(b^2-4ac))/2a).");
     let mut v = d.get("eq", "");
-    ui.add(egui::TextEdit::singleline(&mut v).hint_text("Equation").desired_width(340.0).font(theme::font(15.0)));
+    ui.add(egui::TextEdit::singleline(&mut v).hint_text("Equation").desired_width(super::width(ui, 340.0)).font(theme::font(15.0)));
     d.fields.insert("eq".into(), v.clone());
     let (ok, cancel) = buttons(ui, "Insert");
     if ok && !v.is_empty() {
@@ -955,7 +955,7 @@ fn dlg_spelling(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             let w = item.get("word").and_then(Value::as_str).unwrap_or("");
             let slide = item.get("slide").cloned().unwrap_or_default();
             let shape = item.get("shape").cloned().unwrap_or_default();
-            ui.horizontal(|ui| {
+            super::row(ui, |ui| {
                 ui.label(format!("Slide {}: “{w}”", slide.as_u64().unwrap_or(0) + 1));
                 if ui.small_button("Go to").clicked() {
                     let _ = app.run("slide.go", json!({"index": slide}));
@@ -1070,7 +1070,7 @@ fn dlg_accessibility(app: &mut SlideApp, ui: &mut Ui, _d: &mut Dialog) -> bool {
     }
     egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
         for item in &list {
-            ui.horizontal(|ui| {
+            super::row(ui, |ui| {
                 ui.label(format!(
                     "Slide {}: {}{}",
                     item.get("slide").and_then(Value::as_u64).unwrap_or(0) + 1,
@@ -1260,7 +1260,7 @@ fn dlg_smartart(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         }
     });
     let mut v = d.get("text", "Plan\nBuild\nLaunch");
-    ui.add(egui::TextEdit::multiline(&mut v).hint_text("Diagram items").desired_rows(5).desired_width(320.0));
+    ui.add(egui::TextEdit::multiline(&mut v).hint_text("Diagram items").desired_rows(5).desired_width(super::width(ui, 320.0)));
     d.fields.insert("text".into(), v.clone());
     let (ok, cancel) = buttons(ui, "Insert");
     if ok {
@@ -1303,7 +1303,7 @@ fn dlg_autocorrect(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     ui.add_space(4.0);
     let mut from = d.get("from", "");
     let mut to = d.get("to", "");
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         let l = ui.label("Replace");
         ui.add(egui::TextEdit::singleline(&mut from).desired_width(90.0)).labelled_by(l.id);
         let l = ui.label("With");
@@ -1374,6 +1374,10 @@ fn dlg_preferences(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     // on release, and at once from the keyboard.
     let pending = d.fields.get("uiScale").and_then(|v| v.parse::<f32>().ok());
     let mut scale = pending.unwrap_or(app.ui.ui_scale);
+    // A phone has the room for a visible label above the slider.
+    if crate::phone::active(ui.ctx()) {
+        ui.label("Interface size");
+    }
     let r = ui.add(egui::Slider::new(&mut scale, 0.75..=1.75));
     // No visible label here (the row is laid out to fit); the accessible name only.
     let enabled = r.enabled();
@@ -1399,7 +1403,7 @@ fn dlg_preferences(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     ui.checkbox(&mut app.session.prefs.smart_guides, "Show smart guides");
     ui.checkbox(&mut app.session.prefs.snap_to_grid, "Snap objects to grid");
     ui.checkbox(&mut app.session.prefs.smart_quotes, "Replace straight quotes with smart quotes");
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.checkbox(&mut app.session.prefs.autocorrect, "AutoCorrect as you type");
         if ui.button("AutoCorrect Options…").clicked() {
             *d = Dialog::new("autocorrect");
@@ -1408,7 +1412,7 @@ fn dlg_preferences(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     if d.id != "preferences" {
         return false;
     }
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         let label = ui.label("Your name (comments):");
         // Name the field for assistive technology; a bare text edit next to a label is an
         // unnamed input in egui 0.37's accessibility tree.
