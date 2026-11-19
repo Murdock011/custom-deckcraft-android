@@ -267,7 +267,7 @@ pub fn sections(app: &mut SlideApp, sheet: Sheet) -> Vec<Section> {
                         tile(Icon::Subscript, "Subscript", "format.subscript").keep().on(flag("subscript")),
                         tile(Icon::FontGrow, "Larger", "format.grow").keep(),
                         tile(Icon::FontShrink, "Smaller", "format.shrink").keep(),
-                        tile(Icon::Highlight, "Highlight", "format.highlight").with(json!({"color": "#FFFF00"})).keep(),
+                        tile(Icon::Highlight, "Highlight…", SUB).with(json!({"sub": "highlight"})).keep(),
                         tile(Icon::ClearFormatting, "Clear", "format.clear").keep(),
                         tile(Icon::FontColor, "Font…", "format.fontDialog"),
                     ],
@@ -312,7 +312,8 @@ pub fn sections(app: &mut SlideApp, sheet: Sheet) -> Vec<Section> {
             section(
                 "Shape",
                 vec![
-                    tile(Icon::ShapeOutline, "Outline", "shape.line").with(json!({"color": "#000000"})).keep(),
+                    tile(Icon::ShapeOutline, "Outline…", SUB).with(json!({"sub": "outline"})).keep(),
+                    tile(Icon::AlignObjects, "Align…", SUB).with(json!({"sub": "align"})).keep(),
                     tile(Icon::AltText, "Alt Text…", "app.dialog").with(json!({"id": "altText"})),
                     tile(Icon::Close, "Delete", "edit.delete").keep(),
                 ],
@@ -378,9 +379,78 @@ const SEARCH: &str = "phone.search";
 /// The pseudo command of the "Shapes…" tile: the engine's shape gallery as a picker.
 const SHAPES: &str = "phone.shapes";
 
+/// The pseudo command of a tile that opens a sub-page (`{"sub": name}`): colours, outline, align.
+const SUB: &str = "phone.sub";
+/// The pseudo commands of the font row: All tools' font and size pickers.
+const FONT_NAME: &str = "phone.fontName";
+const FONT_SIZE: &str = "phone.fontSize";
+
 /// Whether a pseudo command of the phone sheets (not the engine's).
 fn is_pseudo(id: &str) -> bool {
-    matches!(id, ALL_TOOLS | SEARCH | SHAPES)
+    matches!(id, ALL_TOOLS | SEARCH | SHAPES | SUB | FONT_NAME | FONT_SIZE)
+}
+
+/// The colour swatches of a colour page: the same 16 as WordCraft's and GridCraft's.
+const COLOURS: [&str; 16] = [
+    "#000000", "#FFFFFF", "#C00000", "#FF0000", "#FFC000", "#FFFF00", "#92D050", "#00B050", "#00B0F0", "#0070C0", "#002060", "#7030A0", "#1F4E79",
+    "#2E75B6", "#A9D18E", "#F4B183",
+];
+/// Outline weights, in points.
+const WEIGHTS: [f32; 6] = [0.75, 1.5, 2.25, 3.0, 4.5, 6.0];
+
+/// A sub-page that replaces a sheet's body (plan 1.6): a colour grid, the outline, or Align.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Sub {
+    FontColor,
+    Highlight,
+    Fill,
+    Outline,
+    Align,
+}
+
+impl Sub {
+    fn named(name: &str) -> Option<Sub> {
+        match name {
+            "fontColor" => Some(Sub::FontColor),
+            "highlight" => Some(Sub::Highlight),
+            "fill" => Some(Sub::Fill),
+            "outline" => Some(Sub::Outline),
+            "align" => Some(Sub::Align),
+            _ => None,
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Sub::FontColor => "Font Color",
+            Sub::Highlight => "Highlight",
+            Sub::Fill => "Fill",
+            Sub::Outline => "Outline",
+            Sub::Align => "Align",
+        }
+    }
+}
+
+fn sub_id() -> egui::Id {
+    egui::Id::unique("phone_sheet_sub")
+}
+
+fn sub_page(ctx: &egui::Context) -> Option<Sub> {
+    ctx.data(|d| d.get_temp::<Option<Sub>>(sub_id())).flatten()
+}
+
+fn set_sub_page(ctx: &egui::Context, s: Option<Sub>) {
+    ctx.data_mut(|d| d.insert_temp(sub_id(), s));
+}
+
+/// Whether a sub-page is open (Back closes it before the sheet).
+pub fn sub_open(ctx: &egui::Context) -> bool {
+    sub_page(ctx).is_some()
+}
+
+/// Back from a sub-page to its sheet.
+pub fn close_sub(ctx: &egui::Context) {
+    set_sub_page(ctx, None);
 }
 
 /// A tap-to-insert shape: placed in the middle of a standard slide, ready to drag and resize.
@@ -499,6 +569,13 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                             ran = Some(r);
                         }
                     });
+                } else if let Some(sub) = sub_page(ui.ctx()) {
+                    // A sub-page: Back to the sheet, then its title.
+                    if header_button(ui, Icon::ChevronLeft, "Back", &t) {
+                        set_sub_page(ui.ctx(), None);
+                    }
+                    let (r, _) = ui.allocate_exact_size(vec2((w - TOUCH_H).max(0.0), HEADER_H), Sense::hover());
+                    ui.painter().text(pos2(r.left() + 4.0, r.center().y), Align2::LEFT_CENTER, sub.title(), theme::bold(20.0), t.text);
                 } else {
                     let (r, _) = ui.allocate_exact_size(vec2(w, HEADER_H), Sense::hover());
                     ui.painter().text(pos2(r.left(), r.center().y), Align2::LEFT_CENTER, sheet.label(), theme::bold(20.0), t.text);
@@ -507,7 +584,20 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                     close = true;
                 }
             });
+            if let Some(sub) = sub_page(ui.ctx()) {
+                egui::ScrollArea::vertical().id_salt(("phone_sheet_sub", sub.title())).auto_shrink([false, false]).show(ui, |ui| {
+                    if let Some(r) = sub_body(app, ui, sub, &t) {
+                        ran = Some(r);
+                    }
+                });
+                return;
+            }
             egui::ScrollArea::vertical().id_salt(("phone_sheet_scroll", sheet.label())).auto_shrink([false, false]).show(ui, |ui| {
+                if sheet == Sheet::Text
+                    && let Some(r) = font_row(app, ui, &t)
+                {
+                    ran = Some(r);
+                }
                 if let Some(h) = hint {
                     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), HINT_H), Sense::hover());
                     ui.painter().with_clip_rect(rect).text(rect.left_center(), Align2::LEFT_CENTER, h, theme::font(13.0), t.text_dim);
@@ -518,7 +608,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 if let Some((id, label)) = swatch_cmd {
                     heading(ui, label, &t);
                     let en = ribbon::enabled(app, id);
-                    if let Some(r) = swatch_row(ui, id, label, en, &t) {
+                    let more = if id == "shape.fill" { "fill" } else { "fontColor" };
+                    if let Some(r) = swatch_row(ui, id, label, en, id == "shape.fill", more, &t) {
                         ran = Some(r);
                     }
                 }
@@ -540,18 +631,22 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         });
     if close {
         app.phone_sheet = None;
+        set_sub_page(ui.ctx(), None);
     }
     if let Some((id, params, keep)) = ran {
-        tap(app, id, params, keep);
+        tap(app, ui.ctx(), id, params, keep);
     }
 }
 
 /// Runs what a tile, row or menu entry asked for.
-fn tap(app: &mut SlideApp, id: &'static str, params: Value, keep: bool) {
+fn tap(app: &mut SlideApp, ctx: &egui::Context, id: &'static str, params: Value, keep: bool) {
     match id {
         ALL_TOOLS => crate::phone_tools::open(app),
         SEARCH => crate::phone_tools::open_search(app),
         SHAPES => crate::phone_tools::open_command(app, "shape.insert"),
+        FONT_NAME => crate::phone_tools::open_command(app, "format.font"),
+        FONT_SIZE => crate::phone_tools::open_command(app, "format.size"),
+        SUB => set_sub_page(ctx, params.get("sub").and_then(Value::as_str).and_then(Sub::named)),
         TAB => {
             if let Some(s) = params.get("tab").and_then(Value::as_u64).and_then(|i| Sheet::ALL.get(i as usize)) {
                 app.phone_sheet = Some(*s);
@@ -659,12 +754,28 @@ fn row(ui: &mut Ui, icon: Icon, label: &str, chevron: bool, enabled: bool, on: b
 }
 
 /// The swatch row: one tap colours the selection.
-fn swatch_row(ui: &mut Ui, id: &'static str, label: &str, enabled: bool, t: &Tokens) -> Ran {
+/// The swatch row: one tap colours the selection. Fill starts with No Fill; the row ends with
+/// More…, which opens the colour page `more`.
+fn swatch_row(ui: &mut Ui, id: &'static str, label: &str, enabled: bool, none_first: bool, more: &'static str, t: &Tokens) -> Ran {
     let mut ran: Ran = None;
+    let swatches: &[&str] = if none_first { &SWATCHES[..6] } else { &SWATCHES[..7] };
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        let each = ui.available_width() / SWATCHES.len() as f32;
-        for hex in SWATCHES {
+        let each = ui.available_width() / 8.0;
+        let sense = if enabled { Sense::click() } else { Sense::hover() };
+        if none_first {
+            let (rect, resp) = ui.allocate_exact_size(vec2(each, SWATCH + 12.0), sense);
+            resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, enabled, "No Fill"));
+            ui.painter().circle_stroke(rect.center(), SWATCH * 0.5 - 6.0, Stroke::new(1.5, t.border));
+            ui.painter().line_segment(
+                [rect.center() + vec2(-12.0, 12.0), rect.center() + vec2(12.0, -12.0)],
+                Stroke::new(1.5, Color32::from_rgb(0xC0, 0, 0)),
+            );
+            if resp.clicked() {
+                ran = Some((id, json!({"none": true}), true));
+            }
+        }
+        for &hex in swatches {
             let (rect, resp) = ui.allocate_exact_size(vec2(each, SWATCH + 12.0), if enabled { Sense::click() } else { Sense::hover() });
             resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, enabled, format!("{label} {hex}")));
             let c = parse_hex(hex);
@@ -674,8 +785,112 @@ fn swatch_row(ui: &mut Ui, id: &'static str, label: &str, enabled: bool, t: &Tok
                 ran = Some((id, json!({"color": hex}), true));
             }
         }
+        let (rect, resp) = ui.allocate_exact_size(vec2(each, SWATCH + 12.0), sense);
+        resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, enabled, format!("More {label} colours")));
+        ui.painter().circle_stroke(rect.center(), SWATCH * 0.5 - 6.0, Stroke::new(1.5, t.border));
+        icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(20.0, 20.0)), Icon::More, t.text, !enabled);
+        if resp.clicked() {
+            ran = Some((SUB, json!({"sub": more}), true));
+        }
     });
     ran
+}
+
+/// The Text sheet's font row: the font name (it opens the font list), −, the size (the size list), +.
+fn font_row(app: &mut SlideApp, ui: &mut Ui, t: &Tokens) -> Ran {
+    let st = ribbon::fmt_state(app);
+    let en = ribbon::enabled(app, "format.font");
+    let font = st.get("font").and_then(Value::as_str).unwrap_or("Font").to_string();
+    let size = st.get("size").and_then(Value::as_f64).map(|s| crate::widgets::fmt_num(s, "")).unwrap_or_else(|| "–".into());
+    let mut ran: Ran = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let w = (ui.available_width() - 3.0 * TOUCH_H - 3.0 * 4.0 - 16.0).max(TOUCH_H);
+        let btn = |ui: &mut Ui, text: &str, name: &str, width: f32| -> bool {
+            let (r, resp) = ui.allocate_exact_size(vec2(width, TOUCH_H), if en { Sense::click() } else { Sense::hover() });
+            resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, en, name));
+            ui.painter().rect_filled(r, CornerRadius::same(12), if en && resp.is_pointer_button_down_on() { t.pressed } else { t.hover });
+            let ink = if en { t.text } else { t.text.gamma_multiply(0.45) };
+            ui.painter().with_clip_rect(r.shrink(6.0)).text(r.center(), Align2::CENTER_CENTER, text, theme::font(15.0), ink);
+            resp.clicked() && en
+        };
+        if btn(ui, &font, "Font", w) {
+            ran = Some((FONT_NAME, json!({}), false));
+        }
+        if btn(ui, "−", "Decrease Font Size", TOUCH_H) {
+            ran = Some(("format.shrink", json!({}), true));
+        }
+        if btn(ui, &size, "Font Size", TOUCH_H) {
+            ran = Some((FONT_SIZE, json!({}), false));
+        }
+        if btn(ui, "+", "Increase Font Size", TOUCH_H) {
+            ran = Some(("format.grow", json!({}), true));
+        }
+    });
+    ran
+}
+
+/// A grid of 48 pt colour swatches, `first` (No Fill, No Color…) before them. One tap runs `id`.
+fn colour_grid(ui: &mut Ui, id: &'static str, first: Option<(&str, Value)>, colours: &[&str], t: &Tokens) -> Ran {
+    let mut ran: Ran = None;
+    if let Some((label, params)) = first
+        && row(ui, Icon::Close, label, false, true, false, t).clicked()
+    {
+        ran = Some((id, params, true));
+    }
+    let cols = ((ui.available_width() / (SWATCH + 8.0)).floor() as usize).max(1);
+    for chunk in colours.chunks(cols) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            for &hex in chunk {
+                let (rect, resp) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
+                resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, hex));
+                ui.painter().circle(rect.center(), SWATCH * 0.5 - 4.0, parse_hex(hex), Stroke::new(1.5, t.border));
+                if resp.clicked() {
+                    ran = Some((id, json!({"color": hex}), true));
+                }
+            }
+        });
+    }
+    ran
+}
+
+/// The body of a sub-page.
+fn sub_body(app: &SlideApp, ui: &mut Ui, sub: Sub, t: &Tokens) -> Ran {
+    match sub {
+        Sub::FontColor => colour_grid(ui, "format.color", None, &COLOURS, t),
+        Sub::Fill => colour_grid(ui, "shape.fill", Some(("No Fill", json!({"none": true}))), &COLOURS, t),
+        Sub::Highlight => colour_grid(ui, "format.highlight", Some(("No Color", json!({}))), &COLOURS[2..12], t),
+        Sub::Outline => {
+            let mut ran = colour_grid(ui, "shape.line", Some(("No Outline", json!({"none": true}))), &COLOURS, t);
+            heading(ui, "Weight", t);
+            for w in WEIGHTS {
+                if row(ui, Icon::ShapeOutline, &format!("{} pt", crate::widgets::fmt_num(f64::from(w), "")), false, true, false, t).clicked() {
+                    ran = Some(("shape.line", json!({"width": w}), true));
+                }
+            }
+            ran
+        }
+        Sub::Align => {
+            let mut ran: Ran = None;
+            let en = ribbon::enabled(app, "arrange.align");
+            for (icon, label, id, params) in [
+                (Icon::AlignObjLeft, "Align Left", "arrange.align", json!({"edge": "left"})),
+                (Icon::AlignObjCenter, "Align Center", "arrange.align", json!({"edge": "center"})),
+                (Icon::AlignObjRight, "Align Right", "arrange.align", json!({"edge": "right"})),
+                (Icon::AlignObjTop, "Align Top", "arrange.align", json!({"edge": "top"})),
+                (Icon::AlignObjMiddle, "Align Middle", "arrange.align", json!({"edge": "middle"})),
+                (Icon::AlignObjBottom, "Align Bottom", "arrange.align", json!({"edge": "bottom"})),
+                (Icon::DistributeH, "Distribute Horizontally", "arrange.distribute", json!({"dir": "horizontal"})),
+                (Icon::DistributeV, "Distribute Vertically", "arrange.distribute", json!({"dir": "vertical"})),
+            ] {
+                if row(ui, icon, label, false, en, false, t).clicked() && en {
+                    ran = Some((id, params, true));
+                }
+            }
+            ran
+        }
+    }
 }
 
 /// Whether a tile runs now: its command is enabled (a pseudo command always is).
@@ -847,7 +1062,11 @@ fn tile_button(ui: &mut Ui, tl: &Tile, w: f32, enabled: bool, t: &Tokens) -> egu
         ui.painter().rect_filled(rect.shrink(3.0), CornerRadius::same(12), t.selected);
     }
     let ink = if tl.on { t.accent } else { t.text };
-    icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.center().x, rect.min.y + 22.0), vec2(24.0, 24.0)), tl.icon, ink, !enabled);
+    let icon_rect = Rect::from_center_size(pos2(rect.center().x, rect.min.y + 22.0), vec2(24.0, 24.0));
+    match tl.params.get("layout").and_then(Value::as_str).filter(|_| tl.id == "slide.layout") {
+        Some(layout) => paint_layout(ui.painter(), icon_rect, layout, if enabled { ink } else { ink.gamma_multiply(0.45) }, t),
+        None => icons::paint(ui.painter(), icon_rect, tl.icon, ink, !enabled),
+    }
     let label_ink = if enabled { ink } else { ink.gamma_multiply(0.45) };
     let max_w = (w - 4.0).max(1.0);
     let widest = label.split(' ').map(|word| ui.painter().layout_no_wrap(word.to_owned(), theme::font(12.0), label_ink).size().x).fold(0.0, f32::max);
@@ -860,6 +1079,38 @@ fn tile_button(ui: &mut Ui, tl: &Tile, w: f32, enabled: bool, t: &Tokens) -> egu
     let galley = ui.painter().layout_job(job);
     ui.painter().galley(pos2(rect.center().x, rect.min.y + 40.0), galley, label_ink);
     resp
+}
+
+/// A small picture of a slide layout: the slide's outline, the title bar, and the content boxes.
+fn paint_layout(p: &egui::Painter, icon: Rect, layout: &str, ink: Color32, t: &Tokens) {
+    let slide = Rect::from_center_size(icon.center(), vec2(32.0, 20.0));
+    p.rect_stroke(slide, CornerRadius::same(2), Stroke::new(1.2, ink), egui::StrokeKind::Inside);
+    let fill = ink.gamma_multiply(0.35);
+    let r = |x0: f32, y0: f32, x1: f32, y1: f32| {
+        Rect::from_min_max(
+            pos2(slide.left() + x0 * slide.width(), slide.top() + y0 * slide.height()),
+            pos2(slide.left() + x1 * slide.width(), slide.top() + y1 * slide.height()),
+        )
+    };
+    let bars: Vec<Rect> = match layout {
+        "title" => vec![r(0.15, 0.30, 0.85, 0.50), r(0.30, 0.58, 0.70, 0.68)],
+        "titleAndContent" => vec![r(0.12, 0.12, 0.88, 0.26), r(0.12, 0.36, 0.88, 0.86)],
+        "sectionHeader" => vec![r(0.12, 0.40, 0.80, 0.58), r(0.12, 0.64, 0.60, 0.72)],
+        "twoContent" => vec![r(0.12, 0.12, 0.88, 0.26), r(0.12, 0.36, 0.47, 0.86), r(0.53, 0.36, 0.88, 0.86)],
+        "comparison" => vec![
+            r(0.12, 0.10, 0.88, 0.22),
+            r(0.12, 0.30, 0.47, 0.38),
+            r(0.53, 0.30, 0.88, 0.38),
+            r(0.12, 0.44, 0.47, 0.88),
+            r(0.53, 0.44, 0.88, 0.88),
+        ],
+        "titleOnly" => vec![r(0.12, 0.12, 0.88, 0.26)],
+        _ => vec![],
+    };
+    let _ = t;
+    for b in bars {
+        p.rect_filled(b, CornerRadius::same(1), fill);
+    }
 }
 
 fn parse_hex(hex: &str) -> Color32 {
@@ -1213,6 +1464,35 @@ mod style_tests {
         h.run_steps(2);
         assert_eq!(count(&h), before + 1, "Duplicate ran");
         assert!(h.state().phone_select.is_none(), "an action closes the bar");
+    }
+
+    /// Highlight, Outline and Align open sub-pages with a Back arrow; a swatch there runs its
+    /// command; Back (Escape) returns to the sheet first. The Text sheet has the font row.
+    #[test]
+    fn sub_pages_and_the_font_row() {
+        let mut h = harness(false);
+        let id = h.state().session.active().and_then(|d| d.doc.slides.first().and_then(|s| s.shapes.first().map(|sh| sh.id.0)));
+        h.state_mut().run("edit.select", json!({"ids": [id]})).expect("select the title");
+        h.state_mut().phone_sheet = Some(Sheet::Text);
+        h.run_steps(3);
+        assert!(has(&h, "Font") && has(&h, "Font Size") && has(&h, "Increase Font Size"), "the font row shows");
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "More Font Color colours").click();
+        h.run_steps(3);
+        assert!(has(&h, "Back") && has(&h, "#92D050"), "the font colour page shows its swatches");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(2);
+        assert_eq!(h.state().phone_sheet, Some(Sheet::Text), "Back closes the page, not the sheet");
+        assert!(!has(&h, "#92D050"));
+        h.state_mut().phone_sheet = Some(Sheet::Shape);
+        h.run_steps(3);
+        assert!(has(&h, "No Fill"), "Fill starts with No Fill");
+        // The Outline… tile sits below the fold of a 800 pt window: open its page as the tile does.
+        set_sub_page(&h.ctx, Some(Sub::Outline));
+        h.run_steps(3);
+        assert!(has(&h, "No Outline") && has(&h, "0.75 pt"), "the outline page lists colours and weights");
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "0.75 pt").click();
+        h.run_steps(2);
+        assert!(h.state().phone_sheet.is_some(), "a format keeps the sheet open");
     }
 
     /// `view.theme` sets Light, Dark or System, and `ui.phoneSheetStyle` the sheet style.

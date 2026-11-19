@@ -343,7 +343,12 @@ impl SlideApp {
             let _ = crate::phone_tools::back(self);
         }
         if self.phone_sheet.is_some() && self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-            self.phone_sheet = None;
+            // Back closes a sub-page (a colour grid, Align) before its sheet.
+            if crate::phone_sheet::sub_open(&ctx) {
+                crate::phone_sheet::close_sub(&ctx);
+            } else {
+                self.phone_sheet = None;
+            }
         }
         self.sync_backstage();
         self.keyboard(&ctx);
