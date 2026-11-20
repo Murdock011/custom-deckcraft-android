@@ -45,7 +45,7 @@ same way. Changes below the interface are listed in
 ## Download
 
 Builds are on the [Releases page](https://github.com/Murdock011/custom-deckcraft-android/releases).
-The latest is **0.1.0**: `custom-deckcraft-android-arm64.apk`, for 64-bit ARM phones (arm64-v8a)
+The latest is **0.2.0** (DeckCraft engine 0.18.1): `custom-deckcraft-android-arm64.apk`, for 64-bit ARM phones (arm64-v8a)
 with Android 10 or newer. It is signed with a debug key, so Android asks you to allow installs from
 your browser or file manager. It installs as `ai.storyteller.deckcraft.native`, next to any other
 DeckCraft, WordCraft or GridCraft build.
