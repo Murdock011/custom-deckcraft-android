@@ -340,13 +340,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         ime_output(app, ui, xf);
         media_bar(app, ui, xf);
         gif_buttons(app, ui, xf, &gifs);
-        if resp.secondary_clicked()
-            && let Some(p) = resp.interact_pointer_pos()
-        {
-            let word = app.session.active().and_then(|st| app.squiggles.word_at(st, xf.to_slide(p), 4.0 / xf.scale.max(0.01) as f64));
-            app.squiggles.menu_word = word;
-        }
-        context_menu(app, &resp);
+        press_menu(app, ui, &resp, xf);
     }
     for (axis, active) in bar_active.into_iter().enumerate() {
         if let Some((track, thumb, _)) = scroll_bar(avail, inset, overflow, offset, axis) {
@@ -354,6 +348,30 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             let fill = if active { t.text_dim } else { t.text_faint };
             painter.rect_filled(thumb.shrink(2.0), CornerRadius::same(3), fill);
         }
+    }
+}
+
+/// A long press or right click: on a phone, the selection bar (a tap on the slide closes it);
+/// elsewhere, the context menu, with a misspelt word's suggestions.
+fn press_menu(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) {
+    if crate::phone::active(ui.ctx()) {
+        // A phone: a long press shows the selection bar, never the desktop context menu. A
+        // tap on the slide closes the bar.
+        if resp.secondary_clicked()
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            app.phone_select = Some(crate::phone::SelectBar { at: p, more: false });
+        } else if resp.clicked() {
+            app.phone_select = None;
+        }
+    } else {
+        if resp.secondary_clicked()
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            let word = app.session.active().and_then(|st| app.squiggles.word_at(st, xf.to_slide(p), 4.0 / xf.scale.max(0.01) as f64));
+            app.squiggles.menu_word = word;
+        }
+        context_menu(app, resp);
     }
 }
 

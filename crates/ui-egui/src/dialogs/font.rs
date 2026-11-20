@@ -17,14 +17,14 @@ fn seed_font_fields(d: &mut Dialog) {
 
 /// Home › Font › Font…, the shape menu and Cmd+T. One OK applies every field together.
 pub(super) fn font_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
-    ui.set_min_width(460.0);
+    super::min_width(ui, 460.0);
     seed_font_fields(d);
     let mut fams = crate::ribbon::font_families(app);
     let family = d.get("family", "");
     if !family.is_empty() && !fams.iter().any(|f| f == &family) {
         fams.insert(0, family.clone());
     }
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         let field = ui.add_sized(vec2(88.0, 20.0), egui::Label::new("Font"));
         let combo = craft_ui::ComboBox::from_id_salt("font_dialog_family")
             .selected_text(if family.is_empty() { " " } else { family.as_str() })
@@ -40,13 +40,13 @@ pub(super) fn font_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bo
             });
         let _ = combo.response.labelled_by(field.id);
     });
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         let _ = labeled_text(ui, d, "Size", "size", 64.0);
         ui.add_space(16.0);
         check(ui, d, "Bold", "bold", false);
         check(ui, d, "Italic", "italic", false);
     });
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(88.0, 20.0), egui::Label::new("Underline"));
         choice(
             ui,
@@ -59,18 +59,18 @@ pub(super) fn font_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bo
         ui.add_space(8.0);
         let _ = labeled_text(ui, d, "Color", "color", 110.0);
     });
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(88.0, 20.0), egui::Label::new("Strikethrough"));
         choice(ui, d, "font_dialog_strike", "Strikethrough", "strike", &[("none", "None"), ("sng", "Single"), ("dbl", "Double")]);
     });
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(88.0, 20.0), egui::Label::new("Baseline"));
         choice(ui, d, "font_dialog_baseline", "Baseline", "baseline", &[("none", "None"), ("super", "Superscript"), ("sub", "Subscript")]);
         ui.add_space(8.0);
         ui.label("Caps");
         choice(ui, d, "font_dialog_caps", "Caps", "caps", &[("none", "None"), ("small", "Small caps"), ("all", "All caps")]);
     });
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(88.0, 20.0), egui::Label::new("Spacing"));
         let mut spacing = d.get("spacing", "0");
         let edited = ui.add(egui::TextEdit::singleline(&mut spacing).desired_width(64.0).hint_text("pt"));

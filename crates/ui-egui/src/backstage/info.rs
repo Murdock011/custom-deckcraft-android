@@ -12,6 +12,40 @@ pub const SAVE_TYPES: [(&str, &str, &str); 7] = [
     ("jpeg", "JPEG Picture (*.jpg)", "The current slide as a compressed picture"),
 ];
 
+/// The file types as tappable rows (label over detail); the chosen one is shaded. `skip` is an id to leave out.
+pub(super) fn type_rows(ui: &mut Ui, bs: &mut Backstage, row_w: f32, row_h: f32, skip: &str) {
+    let t = Tokens::get(ui.ctx());
+    for (id, label, detail) in SAVE_TYPES.iter().filter(|s| s.0 != skip) {
+        let selected = bs.file_type == *id;
+        let (rect, resp) = ui.allocate_exact_size(vec2(row_w, row_h), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, *label));
+        let p = ui.painter();
+        if selected {
+            p.rect_filled(rect, egui::CornerRadius::same(2), t.selected);
+        } else if resp.hovered() {
+            p.rect_filled(rect, egui::CornerRadius::same(2), t.hover);
+        }
+        let gap = row_h * 0.18;
+        p.with_clip_rect(rect).text(
+            egui::pos2(rect.left() + 12.0, rect.center().y - gap),
+            egui::Align2::LEFT_CENTER,
+            *label,
+            theme::font(13.0),
+            t.text,
+        );
+        p.with_clip_rect(rect).text(
+            egui::pos2(rect.left() + 12.0, rect.center().y + gap + 1.0),
+            egui::Align2::LEFT_CENTER,
+            *detail,
+            theme::font(11.5),
+            t.text_dim,
+        );
+        if resp.clicked() {
+            bs.file_type = id;
+        }
+    }
+}
+
 /// Info page properties: (`file.properties` key, label, hint).
 pub(super) const PROPERTIES: [(&str, &str, &str); 7] = [
     ("title", "Title", "Add a title"),
@@ -55,9 +89,14 @@ pub(super) fn info(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
         });
     }
     ui.add_space(20.0);
-    ui.horizontal_top(|ui| {
+    // A phone stacks the tasks above the properties: side by side the properties were off the screen.
+    let phone = crate::phone::is_phone_size(ui.ctx().content_rect().size());
+    let layout = if phone { egui::Layout::top_down(egui::Align::Min) } else { egui::Layout::left_to_right(egui::Align::Min) };
+    ui.with_layout(layout, |ui| {
         ui.vertical(|ui| {
-            ui.set_width(440.0);
+            if !phone {
+                ui.set_width(440.0);
+            }
             if task(
                 ui,
                 Icon::Accessibility,
@@ -82,6 +121,10 @@ pub(super) fn info(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
             heading(ui, "Properties");
             let props = v.get("properties").cloned().unwrap_or_default();
             let size = v.get("bytes").and_then(Value::as_u64).map(format_bytes);
+            if phone {
+                phone_properties(app, ui, bs, &v, size, path.clone());
+                return;
+            }
             egui::Grid::new("backstage_props").num_columns(2).spacing(vec2(18.0, 7.0)).show(ui, |ui| {
                 let row = |ui: &mut Ui, k: &str, val: String| {
                     ui.label(RichText::new(k).color(t.text_dim));
@@ -98,7 +141,9 @@ pub(super) fn info(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
                     let Some(draft) = bs.props.get_mut(i) else { continue };
                     let l = ui.label(RichText::new(*label).color(t.text_dim));
                     let id = ui.make_persistent_id(("backstage_prop", *key));
-                    let resp = ui.add(egui::TextEdit::singleline(draft).id(id).hint_text(*hint).desired_width(300.0)).labelled_by(l.id);
+                    let resp = ui
+                        .add(egui::TextEdit::singleline(draft).id(id).hint_text(*hint).desired_width(if phone { 200.0 } else { 300.0 }))
+                        .labelled_by(l.id);
                     if resp.lost_focus() && *draft != saved {
                         // Commit first: a click on another field takes the focus before this one is drawn.
                         let mut p = serde_json::Map::new();
@@ -115,6 +160,41 @@ pub(super) fn info(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
             });
         });
     });
+}
+
+/// Info's properties on a phone: each label above its value or field, the fields as wide as the
+/// page and 48 pt tall. A field commits as on the desktop, when it loses the focus.
+fn phone_properties(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, v: &Value, size: Option<String>, path: Option<String>) {
+    let t = Tokens::get(ui.ctx());
+    let props = v.get("properties").cloned().unwrap_or_default();
+    let fact = |ui: &mut Ui, k: &str, val: String| {
+        ui.label(RichText::new(k).color(t.text_dim));
+        ui.label(val);
+        ui.add_space(8.0);
+    };
+    if let Some(s) = size {
+        fact(ui, "Size", s);
+    }
+    fact(ui, "Slides", v.get("slides").and_then(Value::as_u64).unwrap_or(0).to_string());
+    fact(ui, "Hidden slides", v.get("hiddenSlides").and_then(Value::as_u64).unwrap_or(0).to_string());
+    for (i, (key, label, hint)) in PROPERTIES.iter().enumerate() {
+        let saved = props.get(*key).and_then(Value::as_str).unwrap_or("").to_string();
+        let Some(draft) = bs.props.get_mut(i) else { continue };
+        let l = ui.label(RichText::new(*label).color(t.text_dim));
+        let id = ui.make_persistent_id(("backstage_prop", *key));
+        let edit = egui::TextEdit::singleline(draft).id(id).hint_text(*hint).desired_width(f32::INFINITY);
+        let resp = ui.add(crate::phone_dialog::touch_edit(ui, edit)).labelled_by(l.id);
+        if resp.lost_focus() && *draft != saved {
+            let mut p = serde_json::Map::new();
+            p.insert((*key).to_string(), json!(draft.clone()));
+            let _ = app.run("file.properties", Value::Object(p));
+        } else if !resp.has_focus() && *draft != saved {
+            draft.clone_from(&saved);
+            ui.ctx().request_repaint();
+        }
+        ui.add_space(8.0);
+    }
+    fact(ui, "Location", path.unwrap_or_else(|| "Not saved yet".into()));
 }
 
 /// Commits what the Info page's property fields hold and the presentation does not: a side-menu
@@ -153,23 +233,37 @@ pub(super) fn save_as(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: 
     dim(ui, path.as_deref().unwrap_or("Not saved yet"));
     ui.add_space(14.0);
     let current = SAVE_TYPES.iter().find(|s| s.0 == bs.file_type).map_or(SAVE_TYPES[0].1, |s| s.1);
-    ui.horizontal(|ui| {
-        craft_ui::ComboBox::from_id_salt("backstage_save_type")
-            .width(340.0)
-            .selected_text(current)
-            .show_ui(ui, |ui| {
-                for (id, label, _) in SAVE_TYPES {
-                    if ui.selectable_label(bs.file_type == id, label).clicked() {
-                        bs.file_type = id;
+    // A phone lists every type as a 56 pt row with its description, then a full-width Save button: a drop-down
+    // with its button beside it ran off the screen, and the choice of format was hard to see and tap.
+    let phone = crate::phone::is_phone_size(ui.ctx().content_rect().size());
+    if phone {
+        heading(ui, "Save as type");
+        let w = ui.available_width();
+        type_rows(ui, bs, w, 56.0, "");
+        ui.add_space(14.0);
+    }
+    let layout = if phone { egui::Layout::top_down(egui::Align::Min) } else { egui::Layout::left_to_right(egui::Align::Center) };
+    ui.with_layout(layout, |ui| {
+        if !phone {
+            craft_ui::ComboBox::from_id_salt("backstage_save_type")
+                .width(340.0)
+                .selected_text(current)
+                .show_ui(ui, |ui| {
+                    for (id, label, _) in SAVE_TYPES {
+                        if ui.selectable_label(bs.file_type == id, label).clicked() {
+                            bs.file_type = id;
+                        }
                     }
-                }
-            })
-            .response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, "Save as type"));
+                })
+                .response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, "Save as type"));
+        }
         // A page that keeps the files (`host_save`) saves; plain web downloads.
         let web = app.services.pick_save.is_none() && app.services.host_save.is_none();
-        let label = if web { "Download" } else { "Save" };
-        let save = ui.add(egui::Button::new(RichText::new(label).color(t.accent_text)).fill(t.accent).min_size(vec2(84.0, 26.0)));
+        // A phone always says Save: Android saves through the system's file dialog.
+        let label = if web && !phone { "Download" } else { "Save" };
+        let size = if phone { vec2(ui.available_width(), 52.0) } else { vec2(84.0, 26.0) };
+        let save = ui.add(egui::Button::new(RichText::new(label).color(t.accent_text)).fill(t.accent).min_size(size));
         if save
             .on_hover_text(if web {
                 "Download the file"
@@ -197,7 +291,7 @@ pub(super) fn save_as(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: 
         }
     });
     ui.add_space(8.0);
-    if let Some((_, _, detail)) = SAVE_TYPES.iter().find(|s| s.0 == bs.file_type) {
+    if !phone && let Some((_, _, detail)) = SAVE_TYPES.iter().find(|s| s.0 == bs.file_type) {
         dim(ui, detail);
     }
 }

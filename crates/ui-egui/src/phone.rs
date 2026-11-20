@@ -23,8 +23,9 @@ pub fn is_phone_size(size: egui::Vec2) -> bool {
 }
 /// The Android minimum touch target, in points: every button and chip is at least this tall.
 pub const TOUCH_H: f32 = 48.0;
-/// Height of the top app bar.
-const APP_BAR_H: f32 = 56.0;
+/// Height of the top app bar, and in a window under 500 pt tall (a phone held sideways).
+const APP_BAR_H: f32 = 64.0;
+const APP_BAR_H_SHORT: f32 = 48.0;
 /// Height of a slide chip (its thumbnail). The width follows the slide's shape.
 const CHIP_H: f32 = 52.0;
 
@@ -49,27 +50,34 @@ fn icon_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, on: bool) ->
     resp
 }
 
-/// The top app bar: File (the Backstage), the title, Undo, Redo and Play from Start.
+/// The top app bar: File (the Backstage), the title (with ` •` for unsaved changes), Undo, Redo,
+/// Save and Play from Start. Undo and Redo are disabled when they have nothing to do.
 pub fn top_bar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let (title, dirty) = app.session.active().map(|d| (d.title(), d.is_dirty())).unwrap_or_default();
-    egui::Panel::top("phone_top").exact_size(APP_BAR_H).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+    let height = if ui.ctx().content_rect().height() < MAX_HEIGHT { APP_BAR_H_SHORT } else { APP_BAR_H };
+    egui::Panel::top("phone_top").exact_size(height).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             if icon_button(ui, Icon::File, "File", true, app.backstage_open()).clicked() {
                 let _ = app.run("app.home", json!({}));
             }
-            let right = 3.0 * TOUCH_H;
+            let right = 4.0 * TOUCH_H;
             let w = (ui.available_width() - right).max(0.0);
             let (rect, _) = ui.allocate_exact_size(vec2(w, TOUCH_H), Sense::hover());
             let text = if dirty { format!("{title} •") } else { title };
-            ui.painter().with_clip_rect(rect).text(pos2(rect.min.x + 4.0, rect.center().y), Align2::LEFT_CENTER, text, theme::font(16.0), t.text);
+            ui.painter().with_clip_rect(rect).text(pos2(rect.min.x + 4.0, rect.center().y), Align2::LEFT_CENTER, text, theme::bold(18.0), t.text);
             let has_doc = app.session.active().is_some();
-            if icon_button(ui, Icon::Undo, "Undo", has_doc, false).clicked() {
+            let undo = has_doc && deckcraft_engine::cmd::can_undo(&app.session).is_ok();
+            let redo = has_doc && deckcraft_engine::cmd::can_redo(&app.session).is_ok();
+            if icon_button(ui, Icon::Undo, "Undo", undo, false).clicked() {
                 let _ = app.run("edit.undo", json!({}));
             }
-            if icon_button(ui, Icon::Redo, "Redo", has_doc, false).clicked() {
+            if icon_button(ui, Icon::Redo, "Redo", redo, false).clicked() {
                 let _ = app.run("edit.redo", json!({}));
+            }
+            if icon_button(ui, Icon::Save, "Save", has_doc, false).clicked() {
+                let _ = app.run("file.save", json!({}));
             }
             if icon_button(ui, Icon::PlayFromStart, "Play from start", has_doc, false).clicked() {
                 let _ = app.run("show.fromStart", json!({}));
@@ -84,7 +92,17 @@ pub fn top_bar(app: &mut SlideApp, ui: &mut Ui) {
 pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some((doc, current)) = app.session.active().map(|d| (d.doc.clone(), d.selection.slide)) else { return };
-    phone_sheet::tab_bar(app, ui);
+    // While text is edited the keyboard is up: the keyboard bar takes the bottom, alone.
+    if editing_text(app) {
+        keyboard_bar(app, ui);
+        return;
+    }
+    // Tiles: the tab bar at the bottom, the sheet above it. List: no tab bar; the sheet at the
+    // bottom, or the floating quick bar above the slide chips while no sheet is open.
+    let list = phone_sheet::list_style(app);
+    if !list {
+        phone_sheet::tab_bar(app, ui);
+    }
     phone_sheet::show(app, ui);
     let ppp = ui.ctx().pixels_per_point();
     let aspect = (doc.slide_size.width / doc.slide_size.height.max(1.0)).clamp(0.5, 3.0) as f32;
@@ -119,8 +137,173 @@ pub fn bottom_bar(app: &mut SlideApp, ui: &mut Ui) {
             });
         });
     });
+    if list {
+        phone_sheet::quick_bar(app, ui);
+    }
     if pending {
         ui.ctx().request_repaint();
+    }
+}
+
+/// The selection bar after a long press: where the finger was, and whether More is open.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SelectBar {
+    pub at: egui::Pos2,
+    pub more: bool,
+}
+
+/// The selection bar's buttons: 72 pt wide, an icon over a label, 64 pt tall.
+const SELECT_W: f32 = 72.0;
+const SELECT_H: f32 = 64.0;
+
+/// The selection bar (plan 1.11): after a long press, four actions and More near the finger. More
+/// opens a list of the rest under the bar. An action closes the bar; so do Back and a tap on the slide.
+pub fn selection_bar(app: &mut SlideApp, ctx: &Context) {
+    let Some(bar) = app.phone_select else { return };
+    if app.show.is_some() || app.dialog.is_some() {
+        app.phone_select = None;
+        return;
+    }
+    let t = Tokens::get(ctx);
+    let editing = editing_text(app);
+    let actions: [(Icon, &str, &str, serde_json::Value); 4] = [
+        (Icon::Cut, "Cut", "edit.cut", json!({})),
+        (Icon::Copy, "Copy", "edit.copy", json!({})),
+        (Icon::Paste, "Paste", "edit.paste", json!({})),
+        if editing {
+            (Icon::Object, "Select All", "text.selectAll", json!({}))
+        } else {
+            (Icon::DuplicateSlide, "Duplicate", "edit.duplicate", json!({}))
+        },
+    ];
+    let more_rows: [(Icon, &str, &str, serde_json::Value); 6] = [
+        (Icon::Close, "Delete", "edit.delete", json!({})),
+        (Icon::BringToFront, "Bring to Front", "arrange.bringToFront", json!({})),
+        (Icon::SendToBack, "Send to Back", "arrange.sendToBack", json!({})),
+        (Icon::Group, "Group", "arrange.group", json!({})),
+        (Icon::Ungroup, "Ungroup", "arrange.ungroup", json!({})),
+        (Icon::AltText, "Alt Text…", "app.dialog", json!({"id": "altText"})),
+    ];
+    let screen = ctx.content_rect();
+    let width = SELECT_W * 5.0 + 8.0;
+    // Above the finger, kept on the screen; below it when there is no room above.
+    let x = (bar.at.x - width / 2.0).clamp(screen.left() + 8.0, (screen.right() - width - 8.0).max(screen.left() + 8.0));
+    let above = bar.at.y - SELECT_H - 40.0;
+    let y = if above > screen.top() + 72.0 { above } else { (bar.at.y + 40.0).min(screen.bottom() - SELECT_H - 8.0) };
+    let mut ran: Option<(&'static str, serde_json::Value)> = None;
+    let mut toggle_more = false;
+    egui::Area::new(egui::Id::unique("phone_select_bar")).fixed_pos(pos2(x, y)).order(egui::Order::Foreground).show(ctx, |ui| {
+        egui::Frame::NONE
+            .fill(t.card)
+            .corner_radius(CornerRadius::same(16))
+            .shadow(egui::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(60) })
+            .inner_margin(egui::Margin::same(4))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    // `name` is the accessible name; `label` the text under the icon.
+                    let button = |ui: &mut Ui, icon: Icon, label: &str, name: &str, enabled: bool, on: bool| -> bool {
+                        let (r, resp) = ui.allocate_exact_size(vec2(SELECT_W, SELECT_H), if enabled { Sense::click() } else { Sense::hover() });
+                        resp.widget_info(|| WidgetInfo::selected(egui::Role::Button, enabled, on, name));
+                        if enabled && resp.is_pointer_button_down_on() || on {
+                            ui.painter().rect_filled(r.shrink(2.0), CornerRadius::same(12), if on { t.selected } else { t.pressed });
+                        }
+                        let ink = if enabled { t.text } else { t.text.gamma_multiply(0.45) };
+                        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.center().x, r.top() + 22.0), vec2(24.0, 24.0)), icon, ink, !enabled);
+                        ui.painter().text(pos2(r.center().x, r.bottom() - 14.0), Align2::CENTER_CENTER, label, theme::font(12.0), ink);
+                        resp.clicked() && enabled
+                    };
+                    for (icon, label, id, params) in &actions {
+                        if button(ui, *icon, label, label, crate::ribbon::enabled(app, id), false) {
+                            ran = Some((id, params.clone()));
+                        }
+                    }
+                    if button(ui, Icon::More, "More", "More actions", true, bar.more) {
+                        toggle_more = true;
+                    }
+                });
+                if bar.more {
+                    ui.separator();
+                    for (icon, label, id, params) in &more_rows {
+                        let en = crate::ribbon::enabled(app, id);
+                        let (r, resp) = ui.allocate_exact_size(vec2(width - 8.0, 52.0), if en { Sense::click() } else { Sense::hover() });
+                        resp.widget_info(|| WidgetInfo::labeled(egui::Role::Button, en, *label));
+                        if en && resp.is_pointer_button_down_on() {
+                            ui.painter().rect_filled(r, CornerRadius::same(12), t.pressed);
+                        }
+                        let ink = if en { t.text } else { t.text.gamma_multiply(0.45) };
+                        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.left() + 24.0, r.center().y), vec2(24.0, 24.0)), *icon, ink, !en);
+                        ui.painter().text(pos2(r.left() + 56.0, r.center().y), Align2::LEFT_CENTER, *label, theme::font(16.0), ink);
+                        if resp.clicked() && en {
+                            ran = Some((id, params.clone()));
+                        }
+                    }
+                }
+            });
+    });
+    if toggle_more && let Some(b) = &mut app.phone_select {
+        b.more = !b.more;
+    }
+    if let Some((id, params)) = ran {
+        app.phone_select = None;
+        let _ = app.run(id, params);
+    }
+}
+
+/// Whether text is being edited (the on-screen keyboard is up for it).
+pub fn editing_text(app: &SlideApp) -> bool {
+    app.show.is_none() && app.session.active().is_some_and(|d| d.selection.text.is_some())
+}
+
+/// Height of the keyboard bar.
+const KEYBOARD_BAR_H: f32 = 56.0;
+
+/// The keyboard bar, on the keyboard while text is edited: the character and paragraph formats,
+/// scrolling sideways when they do not fit, and Done at the fixed right end, which ends the edit.
+fn keyboard_bar(app: &mut SlideApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let st = crate::ribbon::fmt_state(app);
+    let flag = |k: &str| st.get(k).and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let buttons = [
+        (Icon::Bold, "Bold", "format.bold", flag("bold")),
+        (Icon::Italic, "Italic", "format.italic", flag("italic")),
+        (Icon::Underline, "Underline", "format.underline", flag("underline")),
+        (Icon::Bullets, "Bullets", "format.bullets", false),
+        (Icon::Numbering, "Numbering", "format.numbering", false),
+        (Icon::DecreaseIndent, "Decrease Indent", "format.outdent", false),
+        (Icon::IncreaseIndent, "Increase Indent", "format.indent", false),
+        (Icon::FontShrink, "Smaller", "format.shrink", false),
+        (Icon::FontGrow, "Larger", "format.grow", false),
+    ];
+    let mut ran: Option<&str> = None;
+    let mut done = false;
+    egui::Panel::bottom("phone_keyboard_bar").exact_size(KEYBOARD_BAR_H).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+        ui.painter().hline(ui.max_rect().x_range(), ui.max_rect().min.y, Stroke::new(1.0, t.border));
+        ui.horizontal_centered(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let middle = (ui.available_width() - TOUCH_H - 12.0).max(TOUCH_H);
+            egui::ScrollArea::horizontal().id_salt("phone_keyboard_bar").max_width(middle).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for (icon, label, id, on) in buttons {
+                        if icon_button(ui, icon, label, crate::ribbon::enabled(app, id), on).clicked() {
+                            ran = Some(id);
+                        }
+                    }
+                });
+            });
+            let (r, _) = ui.allocate_exact_size(vec2(12.0, 24.0), Sense::hover());
+            ui.painter().vline(r.center().x, r.y_range(), Stroke::new(1.0, t.border));
+            if icon_button(ui, Icon::Check, "Done", true, false).clicked() {
+                done = true;
+            }
+        });
+    });
+    if let Some(id) = ran {
+        let _ = app.run(id, json!({}));
+    }
+    if done {
+        let _ = app.run("text.exit", json!({}));
     }
 }
 

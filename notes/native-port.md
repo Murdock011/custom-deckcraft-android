@@ -31,6 +31,21 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - The keyboard shows only while text is edited (`keyboard::editing_text`), not for every selected shape:
   found on the emulator, where inserting a chart raised the keyboard over half the screen. A first tap
   selects; a second tap that starts editing raises it.
+- All tools (More ▸ All tools, `phone_tools.rs`): every ribbon tab and command of the engine, on a phone. Rows
+  are built from the engine's own command list (`command_specs`: its ribbon tab and group, whether it needs
+  arguments, why it is disabled), so a new command appears without editing a table. A tap runs the command, opens
+  a picker fed by the engine's galleries (themes, colours, fonts, slide sizes, transitions, animations, shapes,
+  picture styles, chart types, font names and sizes, or any `a|b|c` spelled out in the params doc), or opens a
+  form for typed values (numbers, true/false and lists are read as such). Contextual tabs (Shape Format, Picture
+  Format, Table Design and Layout, Diagram, Chart, Playback, masters) list only while the selection calls for
+  them. Search finds any command by name or id. Back closes one screen at a time. Commands that need a file say
+  where to go. Not done: thumbnail galleries, a colour picker in forms, Draw (pen) and Record.
+- The File view (Backstage) on a phone: the side menu is a full-width list of 52 pt rows, a tap opens one page
+  full width with its own back arrow, and Back (Esc) goes page → menu → presentation. Found on a real phone:
+  Export's file-type list and Save As's Save button ran off the screen. Export, Save As, Print and Info
+  stack vertically; Save As lists every type as a 56 pt row. Open, New and About were not checked closely.
+- Saving as `.odp` (OpenDocument) or `.ppt` (the old binary format) is not possible: the engine writes
+  `.pptx`, `.deckcraft`, PDF, outline text, RTF, PNG and JPEG only.
 - Reset: a tap or key during a composition makes egui wait for the platform to acknowledge an
   input-method reset, and Android never does. The host reads the id (`pending_ime_reset`), Kotlin
   restarts the input and answers with message kind 6, and the host sends `ImeResetCompleted`.
@@ -56,6 +71,33 @@ Everything below is checked only by desktop tests, clippy and a desktop type-che
 - Not run on a device. Tests cover tile command ids, dialog ids, tab toggling, Back, and a draw at
   phone width. `DECKCRAFT_SHOT_DIR=… cargo test -p deckcraft-ui-egui --lib sheet_screenshots`
   writes a PNG of each sheet (needs a Vulkan driver such as lavapipe).
+
+## One phone shell with WordCraft and GridCraft (2026-11-18)
+
+- Sheets: a header (title and Close), sections with headings, engine labels on up to two lines
+  (tiles 76 pt), at most 50 % of the window (60 % under 500 pt tall). More starts with Search and
+  ends with All tools. Insert gains Shapes…, which opens the shape picker.
+- List style (`ui.phoneSheetStyle` `{"style": "list"}`, or Preferences on a phone): no tab bar, a
+  floating quick bar above the chips (New Slide, Text Box, Picture, Bold, Italic, More), list sheets
+  with a tab menu chip that also holds Search and All tools. Both styles draw one model
+  (`phone_sheet::sections`).
+- Top bar 64 pt (48 pt when short), with Save; Undo and Redo are disabled when they have nothing to do.
+- Theme: Light (default), Dark or System (`view.theme` `{"mode"}`); System follows the system's
+  setting live. `view.dark` still works. Preferences shows the three choices.
+- The Android host keeps `ui.json` and `prefs.json` in `settings` in its data folder.
+- Keyboard bar while text is edited, with Done (`text.exit`).
+- File pages on a phone: Save As says Save, Print gives one PDF sentence, Open is one column.
+- All tools: up to 85 % of the window, 16 pt margins, 48 pt form fields, the button names the action.
+- Checks: `cargo clippy -p deckcraft-ui-egui --all-targets -- -D warnings` clean, `cargo test -p
+  deckcraft-ui-egui` 543 passed. Not run: the Android build (no NDK here), the emulator.
+- Done later (2026-11-19): the selection bar after a long press (Cut, Copy, Paste, Duplicate and
+  More; no desktop context menu on a phone); every dialog as a bottom sheet (`phone_dialog.rs`)
+  with a pinned Cancel and action, checked at 360 pt for all 42 dialogs; the Text sheet's font row;
+  colour pages (Font Color, Fill with No Fill, Highlight with No Color); Outline (No Outline,
+  colours, weights) and Align pages; a picture for each layout tile; full-width actions and labels
+  above the Info fields on the File pages.
+- Not done: translation (DeckCraft has no translation function yet), thumbnail galleries and a
+  colour picker in All tools forms, a test that walks the whole Back order.
 
 ## Open
 

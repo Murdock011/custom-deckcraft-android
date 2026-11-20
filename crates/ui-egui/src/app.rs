@@ -52,6 +52,8 @@ impl SlideApp {
             squiggles: Default::default(),
             dialog: None,
             phone_sheet: None,
+            phone_tools: Vec::new(),
+            phone_select: None,
             thesaurus_query: String::new(),
             show: None,
             anim_preview: None,
@@ -183,7 +185,12 @@ impl SlideApp {
     /// Whether Android's Back button has something to close first: the File tab's view, a dialog, a phone sheet or the slide show (Escape ends it).
     /// The Android host asks each frame and sends Escape when this is true.
     pub fn can_go_back(&self) -> bool {
-        self.backstage_open() || self.dialog.is_some() || self.phone_sheet.is_some() || self.show.is_some()
+        self.backstage_open()
+            || self.dialog.is_some()
+            || self.phone_select.is_some()
+            || self.phone_sheet.is_some()
+            || !self.phone_tools.is_empty()
+            || self.show.is_some()
     }
 
     /// Opens the File tab's view on `page` (keeping its state when it is already open).
@@ -321,8 +328,27 @@ impl SlideApp {
             self.ui_end(&ctx);
             return;
         }
+        // Back closes one thing at a time: the selection bar's More list, then the bar.
+        if let Some(bar) = &mut self.phone_select
+            && self.dialog.is_none()
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            if bar.more {
+                bar.more = false;
+            } else {
+                self.phone_select = None;
+            }
+        }
+        if !self.phone_tools.is_empty() && self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            let _ = crate::phone_tools::back(self);
+        }
         if self.phone_sheet.is_some() && self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-            self.phone_sheet = None;
+            // Back closes a sub-page (a colour grid, Align) before its sheet.
+            if crate::phone_sheet::sub_open(&ctx) {
+                crate::phone_sheet::close_sub(&ctx);
+            } else {
+                self.phone_sheet = None;
+            }
         }
         self.sync_backstage();
         self.keyboard(&ctx);
@@ -336,6 +362,7 @@ impl SlideApp {
                 phone::top_bar(self, ui);
                 if self.backstage.is_none() {
                     phone::bottom_bar(self, ui);
+                    phone::selection_bar(self, &ctx);
                 }
             }
         } else {

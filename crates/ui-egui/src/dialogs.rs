@@ -83,12 +83,26 @@ pub fn show(app: &mut SlideApp, ctx: &egui::Context) {
     let Some(mut d) = app.dialog.take() else { return };
     let mut open = true;
     let mut close = false;
+    if crate::phone::active(ctx) {
+        // A phone: the dialog is a bottom sheet (plan 1.9).
+        let (closed, dismissed) =
+            crate::phone_dialog::dialog_sheet(ctx, egui::Id::unique(("dialog_sheet", d.id.clone())), title(&d.id), |ui| body(app, ui, &mut d));
+        close = closed;
+        open = !dismissed;
+    } else {
+        window(app, ctx, &mut d, &mut open, &mut close);
+    }
+    finish(app, ctx, d, open, close);
+}
+
+/// The desktop dialog: a window in the middle of the screen.
+fn window(app: &mut SlideApp, ctx: &egui::Context, d: &mut Dialog, open: &mut bool, close: &mut bool) {
     let mut window = egui::Window::new(title(&d.id))
         .id(egui::Id::unique(("dialog", d.id.clone())))
         .collapsible(false)
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, -40.0))
-        .open(&mut open);
+        .open(open);
     // Two columns of colour rows plus Save must fit the first frame (Theme Colors), as must Save
     // in Theme Fonts. A later resize clips the buttons (the window size sticks) and clicks miss them.
     if d.id == "themeColors" {
@@ -107,8 +121,12 @@ pub fn show(app: &mut SlideApp, ctx: &egui::Context) {
         } else if d.id == "themeFonts" {
             ui.set_min_height(280.0);
         }
-        close = body(app, ui, &mut d);
+        *close = body(app, ui, d);
     });
+}
+
+/// After a dialog's frame: keep it, put Preferences back on Esc, or return to the dialog it came from.
+fn finish(app: &mut SlideApp, ctx: &egui::Context, d: Dialog, open: bool, close: bool) {
     let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
     if open && !close && !escape {
         app.dialog = Some(d);
@@ -126,7 +144,45 @@ pub fn show(app: &mut SlideApp, ctx: &egui::Context) {
     }
 }
 
+/// A dialog's minimum width, on the desktop only: a phone's sheet is as wide as the screen.
+fn min_width(ui: &mut Ui, w: f32) {
+    if !crate::phone::active(ui.ctx()) {
+        ui.set_min_width(w);
+    }
+}
+
+/// A row of controls: on one line on the desktop, wrapping onto more lines on a phone.
+fn row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<R> {
+    if crate::phone::active(ui.ctx()) { ui.horizontal_wrapped(add) } else { ui.horizontal(add) }
+}
+
+/// A field width: `w` on the desktop, at most the room left on a phone.
+fn width(ui: &Ui, w: f32) -> f32 {
+    if crate::phone::active(ui.ctx()) { w.min(ui.available_width()) } else { w }
+}
+
 fn buttons(ui: &mut Ui, ok_label: &str) -> (bool, bool) {
+    // A phone: Cancel and the action pinned at the bottom of the sheet, equal widths, 48 pt tall.
+    if crate::phone::active(ui.ctx()) {
+        let clicked = match crate::phone_dialog::footer_row(ui, &["Cancel", ok_label], 1, true) {
+            Some(c) => c,
+            // The sheet's first frame has no footer yet: the two buttons inline.
+            None => {
+                let w = (ui.available_width() - 8.0) / 2.0;
+                let mut c = None;
+                ui.horizontal(|ui| {
+                    if ui.add(egui::Button::new("Cancel").min_size(vec2(w, 48.0))).clicked() {
+                        c = Some(0);
+                    }
+                    if ui.add(egui::Button::new(ok_label).min_size(vec2(w, 48.0))).clicked() {
+                        c = Some(1);
+                    }
+                });
+                c
+            }
+        };
+        return (clicked == Some(1), clicked == Some(0));
+    }
     let mut ok = false;
     let mut cancel = false;
     ui.add_space(8.0);
@@ -148,10 +204,16 @@ fn buttons(ui: &mut Ui, ok_label: &str) -> (bool, bool) {
 /// edited value in the dialog.
 fn field(ui: &mut Ui, d: &mut Dialog, label: &str, key: &str, default: &str) {
     let mut v = d.get(key, default);
-    ui.horizontal(|ui| {
-        let l = ui.add_sized(vec2(120.0, 20.0), egui::Label::new(label));
-        ui.add(egui::TextEdit::singleline(&mut v).desired_width(180.0)).labelled_by(l.id);
-    });
+    if crate::phone::active(ui.ctx()) {
+        // A phone: the label above its field, the field as wide as the sheet and 48 pt tall.
+        let l = ui.label(label);
+        ui.add(crate::phone_dialog::touch_edit(ui, egui::TextEdit::singleline(&mut v).desired_width(f32::INFINITY))).labelled_by(l.id);
+    } else {
+        ui.horizontal(|ui| {
+            let l = ui.add_sized(vec2(120.0, 20.0), egui::Label::new(label));
+            ui.add(egui::TextEdit::singleline(&mut v).desired_width(180.0)).labelled_by(l.id);
+        });
+    }
     d.fields.insert(key.into(), v);
 }
 

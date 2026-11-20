@@ -192,6 +192,12 @@ pub struct Backstage {
     pub pdf_hidden: bool,
     /// Export › Change File Type › PNG: leave the slide background out (#784).
     pub png_transparent: bool,
+    /// Phone layout: the side menu fills the screen (true) or one page does (false).
+    pub phone_menu: bool,
+    /// Phone layout: the first frame has set `phone_menu`.
+    phone_seen: bool,
+    /// Whether the last frame used the phone layout (so Esc, which has no `Ui`, knows).
+    pub phone: bool,
 }
 
 impl Backstage {
@@ -217,6 +223,9 @@ impl Backstage {
             handouts_per_page: 3,
             pdf_hidden: false,
             png_transparent: false,
+            phone_menu: false,
+            phone_seen: false,
+            phone: false,
         }
     }
 
@@ -227,6 +236,8 @@ impl Backstage {
             self.preview_page = 0;
         }
         self.page = page;
+        // Asking for a page shows it, on a phone too.
+        self.phone_menu = false;
     }
 }
 
@@ -284,7 +295,12 @@ pub fn key(app: &mut SlideApp, key: Key, mods: deckcraft_engine::Mods) -> bool {
     let Some(bs) = app.backstage.as_mut() else { return false };
     match key {
         Key::Escape => {
-            app.close_backstage();
+            if bs.phone && !bs.phone_menu {
+                // A phone shows one page at a time: back goes to the menu, then to the presentation.
+                bs.phone_menu = true;
+            } else {
+                app.close_backstage();
+            }
             true
         }
         Key::ArrowDown | Key::ArrowUp => {
@@ -329,49 +345,47 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     let (nav_bg, page_bg) = colours(&t);
     let mut out = Outcome::default();
     let (top, bottom) = entries(has_doc);
-    egui::Panel::left("backstage_nav").exact_size(NAV_W).resizable(false).frame(egui::Frame::NONE.fill(nav_bg)).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 0.0;
-        if has_doc {
-            let (r, resp) = ui.allocate_exact_size(vec2(NAV_W, BACK_H), Sense::click());
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Back"));
-            let hovered = resp.hovered();
-            if hovered {
-                ui.painter().rect_filled(Rect::from_center_size(pos2(r.left() + 26.0, r.center().y), vec2(34.0, 34.0)), 17.0, t.hover);
-            }
-            icons::paint(
-                ui.painter(),
-                Rect::from_center_size(pos2(r.left() + 26.0, r.center().y), vec2(22.0, 22.0)),
-                Icon::BackCircle,
-                t.text,
-                false,
-            );
-            if resp.on_hover_text("Back (Esc)").clicked() {
-                out.close = true;
-            }
-        } else {
-            ui.add_space(BACK_H);
-        }
-        let mut index = 0;
-        for (k, nav) in top.iter().enumerate() {
-            if k == 3 {
-                separator(ui, &t);
-            }
-            if nav_item(ui, *nav, &bs, index, &t).clicked() {
-                bs.focus = None;
-                commit_props(app, &bs);
-                match act(app, *nav, bs.page) {
-                    None => out.close = true,
-                    Some(p) => out.page = Some(p),
+    // A phone shows the side menu or one page, full width, not both side by side.
+    let phone = crate::phone::is_phone_size(ui.ctx().content_rect().size());
+    bs.phone = phone;
+    if phone && !bs.phone_seen {
+        bs.phone_seen = true;
+        bs.phone_menu = has_doc && bs.page == Page::Home;
+    }
+    let show_nav = !phone || bs.phone_menu;
+    let show_page = !phone || !bs.phone_menu;
+    let nav_w = if phone { ui.available_width() } else { NAV_W };
+    let metrics = NavMetrics { w: nav_w, phone };
+    let mut to_menu = false;
+    if show_nav {
+        egui::Panel::left("backstage_nav").exact_size(nav_w).resizable(false).frame(egui::Frame::NONE.fill(nav_bg)).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            if has_doc {
+                let (r, resp) = ui.allocate_exact_size(vec2(nav_w, metrics.back_h()), Sense::click());
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Back"));
+                let hovered = resp.hovered();
+                if hovered {
+                    ui.painter().rect_filled(Rect::from_center_size(pos2(r.left() + 26.0, r.center().y), vec2(34.0, 34.0)), 17.0, t.hover);
                 }
+                icons::paint(
+                    ui.painter(),
+                    Rect::from_center_size(pos2(r.left() + 26.0, r.center().y), vec2(22.0, 22.0)),
+                    Icon::BackCircle,
+                    t.text,
+                    false,
+                );
+                if resp.on_hover_text("Back (Esc)").clicked() {
+                    out.close = true;
+                }
+            } else {
+                ui.add_space(metrics.back_h());
             }
-            index += 1;
-        }
-        let first_bottom = index;
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-            ui.add_space(8.0);
-            // Bottom-up: draw the last entry first.
-            for (k, nav) in bottom.iter().enumerate().rev() {
-                if nav_item(ui, *nav, &bs, first_bottom + k, &t).clicked() {
+            let mut index = 0;
+            for (k, nav) in top.iter().enumerate() {
+                if k == 3 {
+                    separator(ui, &t, nav_w);
+                }
+                if nav_item(ui, *nav, &bs, index, &t, metrics).clicked() {
                     bs.focus = None;
                     commit_props(app, &bs);
                     match act(app, *nav, bs.page) {
@@ -379,51 +393,95 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                         Some(p) => out.page = Some(p),
                     }
                 }
+                index += 1;
             }
-            separator(ui, &t);
-        });
-    });
-    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(page_bg)).show(ui, |ui| {
-        // Fields, boxes and buttons sit on the page's own colour: outline them, as PowerPoint does.
-        ui.visuals_mut().text_edit_bg_color = Some(t.field_bg);
-        let w = &mut ui.visuals_mut().widgets;
-        w.inactive.bg_fill = t.field_bg;
-        w.inactive.weak_bg_fill = t.field_bg;
-        w.inactive.bg_stroke = Stroke::new(1.0, t.border);
-        w.hovered.bg_stroke = Stroke::new(1.0, t.accent);
-        w.active.bg_stroke = Stroke::new(1.0, t.accent);
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            egui::Frame::NONE.inner_margin(egui::Margin { left: 48, right: 36, top: 22, bottom: 32 }).show(ui, |ui| {
-                // set_max_width can also widen: in a window narrower than CONTENT_W it would push the
-                // page past the right margin and clip the tiles (#1421).
-                ui.set_max_width(ui.available_width().min(CONTENT_W));
-                if bs.page != Page::Home {
-                    ui.label(RichText::new(bs.page.label()).font(theme::bold(22.0)).color(t.text));
-                    ui.add_space(16.0);
+            let first_bottom = index;
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                ui.add_space(8.0);
+                // Bottom-up: draw the last entry first.
+                for (k, nav) in bottom.iter().enumerate().rev() {
+                    if nav_item(ui, *nav, &bs, first_bottom + k, &t, metrics).clicked() {
+                        bs.focus = None;
+                        commit_props(app, &bs);
+                        match act(app, *nav, bs.page) {
+                            None => out.close = true,
+                            Some(p) => out.page = Some(p),
+                        }
+                    }
                 }
-                // Errors raised on a backstage page (a missing recent file, a failed open) would
-                // otherwise vanish: the status bar only draws once the backstage is closed (#172).
-                // A real label, not painted text, so screen readers see it too.
-                if let Some(msg) = app.fresh_status() {
-                    ui.label(RichText::new(&msg).font(theme::font(12.0)).color(t.accent));
-                    ui.add_space(8.0);
-                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
-                }
-                match bs.page {
-                    Page::Home => home(app, ui, &mut bs, &mut out),
-                    Page::New => new_page(app, ui, &mut bs),
-                    Page::Open => open_page(app, ui, &mut bs),
-                    Page::Info => info(app, ui, &mut bs),
-                    Page::SaveAs => save_as(app, ui, &mut bs, &mut out),
-                    Page::Print => print(app, ui, &mut bs),
-                    Page::Export => export(app, ui, &mut bs),
-                    Page::About => about(app, ui),
-                }
+                separator(ui, &t, nav_w);
             });
         });
-    });
+    }
+    if show_page {
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(page_bg)).show(ui, |ui| {
+            // Fields, boxes and buttons sit on the page's own colour: outline them, as PowerPoint does.
+            ui.visuals_mut().text_edit_bg_color = Some(t.field_bg);
+            let w = &mut ui.visuals_mut().widgets;
+            w.inactive.bg_fill = t.field_bg;
+            w.inactive.weak_bg_fill = t.field_bg;
+            w.inactive.bg_stroke = Stroke::new(1.0, t.border);
+            w.hovered.bg_stroke = Stroke::new(1.0, t.accent);
+            w.active.bg_stroke = Stroke::new(1.0, t.accent);
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                let margin = if phone {
+                    egui::Margin { left: 16, right: 16, top: 8, bottom: 24 }
+                } else {
+                    egui::Margin { left: 48, right: 36, top: 22, bottom: 32 }
+                };
+                egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
+                    // set_max_width can also widen: in a window narrower than CONTENT_W it would push the
+                    // page past the right margin and clip the tiles (#1421).
+                    ui.set_max_width(ui.available_width().min(CONTENT_W));
+                    if phone {
+                        // The page's own back arrow (to the menu) and title, in one 48 pt row.
+                        ui.horizontal(|ui| {
+                            let (r, resp) = ui.allocate_exact_size(vec2(48.0, 48.0), Sense::click());
+                            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Menu"));
+                            if resp.is_pointer_button_down_on() {
+                                ui.painter().circle_filled(r.center(), 22.0, t.hover);
+                            }
+                            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), Icon::BackCircle, t.text, false);
+                            if resp.clicked() {
+                                to_menu = true;
+                            }
+                            ui.label(RichText::new(bs.page.label()).font(theme::bold(22.0)).color(t.text));
+                        });
+                        ui.add_space(8.0);
+                    } else if bs.page != Page::Home {
+                        ui.label(RichText::new(bs.page.label()).font(theme::bold(22.0)).color(t.text));
+                        ui.add_space(16.0);
+                    }
+                    // Errors raised on a backstage page (a missing recent file, a failed open) would
+                    // otherwise vanish: the status bar only draws once the backstage is closed (#172).
+                    // A real label, not painted text, so screen readers see it too.
+                    if let Some(msg) = app.fresh_status() {
+                        ui.label(RichText::new(&msg).font(theme::font(12.0)).color(t.accent));
+                        ui.add_space(8.0);
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+                    }
+                    match bs.page {
+                        Page::Home => home(app, ui, &mut bs, &mut out),
+                        Page::New => new_page(app, ui, &mut bs),
+                        Page::Open => open_page(app, ui, &mut bs),
+                        Page::Info => info(app, ui, &mut bs),
+                        Page::SaveAs => save_as(app, ui, &mut bs, &mut out),
+                        Page::Print => print(app, ui, &mut bs),
+                        Page::Export => export(app, ui, &mut bs),
+                        Page::About => about(app, ui),
+                    }
+                });
+            });
+        });
+    }
+    if to_menu {
+        bs.phone_menu = true;
+    }
     if let Some(page) = out.page {
-        bs.go(page);
+        // An action that leaves the page as it was (Save, Close, Options) keeps the phone menu showing.
+        if !(phone && bs.phone_menu && page == bs.page) {
+            bs.go(page);
+        }
     }
     // A command run from a page may have closed the view itself (a new presentation); keep that.
     if out.close && has_doc {
@@ -435,9 +493,35 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
 
 // ---------------------------------------------------------------- side menu
 
+/// The side menu's size: 160 pt wide on a desktop, the whole screen on a phone, where rows are 52 pt
+/// tall (over the 48 pt touch minimum) and a size larger.
+#[derive(Clone, Copy)]
+struct NavMetrics {
+    w: f32,
+    phone: bool,
+}
+
+impl NavMetrics {
+    fn item_h(self) -> f32 {
+        if self.phone { 52.0 } else { ITEM_H }
+    }
+    fn back_h(self) -> f32 {
+        if self.phone { 56.0 } else { BACK_H }
+    }
+    fn font(self) -> f32 {
+        if self.phone { 16.0 } else { 13.0 }
+    }
+    fn icon(self) -> f32 {
+        if self.phone { 22.0 } else { 16.0 }
+    }
+    fn text_x(self) -> f32 {
+        if self.phone { 60.0 } else { 44.0 }
+    }
+}
+
 /// Draw one clickable Backstage navigation row and return its interaction response.
-fn nav_item(ui: &mut Ui, nav: Nav, bs: &Backstage, index: usize, t: &Tokens) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(vec2(NAV_W, ITEM_H), Sense::click());
+fn nav_item(ui: &mut Ui, nav: Nav, bs: &Backstage, index: usize, t: &Tokens, m: NavMetrics) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(m.w, m.item_h()), Sense::click());
     let selected = nav == Nav::Page(bs.page);
     let label = nav.label();
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, label));
@@ -452,13 +536,13 @@ fn nav_item(ui: &mut Ui, nav: Nav, bs: &Backstage, index: usize, t: &Tokens) -> 
         p.rect_stroke(row, CornerRadius::same(2), Stroke::new(1.0, ink), StrokeKind::Inside);
     }
     let ink = if selected { t.accent } else { t.text };
-    icons::paint(p, Rect::from_center_size(pos2(rect.left() + 26.0, rect.center().y), vec2(16.0, 16.0)), nav.icon(), ink, false);
-    p.text(pos2(rect.left() + 44.0, rect.center().y), Align2::LEFT_CENTER, label, theme::font(13.0), ink);
+    icons::paint(p, Rect::from_center_size(pos2(rect.left() + 26.0, rect.center().y), vec2(m.icon(), m.icon())), nav.icon(), ink, false);
+    p.text(pos2(rect.left() + m.text_x(), rect.center().y), Align2::LEFT_CENTER, label, theme::font(m.font()), ink);
     resp
 }
 
-fn separator(ui: &mut Ui, t: &Tokens) {
-    let (rect, _) = ui.allocate_exact_size(vec2(NAV_W, 13.0), Sense::hover());
+fn separator(ui: &mut Ui, t: &Tokens, w: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(w, 13.0), Sense::hover());
     let y = rect.center().y;
     ui.painter().line_segment([pos2(rect.left() + 20.0, y), pos2(rect.right() - 14.0, y)], Stroke::new(1.0, t.separator));
 }

@@ -53,7 +53,9 @@ mod clock;
 mod ime_hooks;
 pub mod panels;
 mod phone;
+mod phone_dialog;
 mod phone_sheet;
+mod phone_tools;
 mod services;
 mod state;
 
@@ -118,6 +120,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.tab", "Ribbon Tab", None, "{tab}"),
     ("view.collapseRibbon", "Collapse the Ribbon", Some("Cmd+F1"), "{}"),
     ("view.dark", "Dark Mode", None, "{on?: bool}"),
+    ("view.theme", "Theme", None, "{mode: light|dark|system}"),
+    ("ui.phoneSheetStyle", "Phone Layout", None, "{style: tiles|list}"),
     ("view.grayscale", "Grayscale", None, "{on?: bool}"),
     ("view.newWindow", "New Window", None, "{on?: bool, slide?: index, delta?: int}"),
     ("show.start", "Slide Show", Some("F5"), "{from?: index, custom?: name}"),
@@ -233,6 +237,11 @@ pub struct SlideApp {
     pub dialog: Option<dialogs::Dialog>,
     /// The open phone bottom sheet (phone layout only).
     pub phone_sheet: Option<phone_sheet::Sheet>,
+    /// The phone's all-tools screens, innermost last (Back closes one).
+    pub phone_tools: Vec<phone_tools::Tool>,
+    /// The phone's selection bar after a long press: where the finger was, and whether its More
+    /// list is open.
+    pub phone_select: Option<phone::SelectBar>,
     /// The word looked up in the Thesaurus pane.
     pub thesaurus_query: String,
     pub show: Option<show::Show>,

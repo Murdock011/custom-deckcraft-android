@@ -16,13 +16,14 @@
 
 ## Screenshots
 
-<p><img src="docs/screenshots/home.png" width="180" alt="Home screen with templates"> <img src="docs/screenshots/editor.png" width="180" alt="A new presentation in the editor, with the slide chips and the tab bar"> <img src="docs/screenshots/insert-sheet.png" width="180" alt="The Insert sheet"> <img src="docs/screenshots/chart.png" width="180" alt="A column chart inserted on a slide"></p>
+<p><img src="docs/screenshots/home.png" width="180" alt="Home screen with templates"> <img src="docs/screenshots/editor.png" width="180" alt="A new presentation in the editor, with the slide chips and the tab bar"> <img src="docs/screenshots/insert-sheet.png" width="180" alt="The Insert sheet in sections"> <img src="docs/screenshots/chart.png" width="180" alt="A column chart inserted on a slide"></p>
 
-<p><img src="docs/screenshots/text-sheet.png" width="180" alt="The Text sheet with colour swatches"> <img src="docs/screenshots/shape-sheet.png" width="180" alt="The Shape sheet"> <img src="docs/screenshots/slide-show.png" width="380" alt="A slide show held sideways, with the touch bar"></p>
+<p><img src="docs/screenshots/text-sheet.png" width="180" alt="The Text sheet with colour swatches"> <img src="docs/screenshots/shape-sheet.png" width="180" alt="The Shape sheet"> <img src="docs/screenshots/list-style.png" width="180" alt="The List style: the Text sheet as rows, with a tab menu"> <img src="docs/screenshots/slide-show.png" width="380" alt="A slide show held sideways, with the touch bar"></p>
 
-The first four pictures are screenshots from an Android 14 emulator. The Text sheet, the Shape sheet
-and the slide show are drawn by the app's own UI test renderer at phone size, because the emulator
-(software-emulated, with no hardware acceleration) was too slow to drive them reliably.
+The Home, editor and chart pictures are screenshots from an Android 14 emulator. The Insert, Text
+and Shape sheets, the List style and the slide show are drawn by the app's own UI test renderer at
+phone size, because the emulator (software-emulated, with no hardware acceleration) was too slow to
+drive them reliably.
 
 ## What this is
 
@@ -44,7 +45,7 @@ same way. Changes below the interface are listed in
 ## Download
 
 Builds are on the [Releases page](https://github.com/Murdock011/custom-deckcraft-android/releases).
-The latest is **0.1.0**: `custom-deckcraft-android-arm64.apk`, for 64-bit ARM phones (arm64-v8a)
+The latest is **0.2.0** (DeckCraft engine 0.18.1): `custom-deckcraft-android-arm64.apk`, for 64-bit ARM phones (arm64-v8a)
 with Android 10 or newer. It is signed with a debug key, so Android asks you to allow installs from
 your browser or file manager. It installs as `ai.storyteller.deckcraft.native`, next to any other
 DeckCraft, WordCraft or GridCraft build.
@@ -52,12 +53,17 @@ DeckCraft, WordCraft or GridCraft build.
 ## What is built
 
 - A native Android host: the DeckCraft interface runs in an eframe window on `android-activity`.
-- A phone layout for windows narrower than 600 pt: an app bar (File, the presentation name,
-  Undo, Redo, Play from start), a row of slide chips, and a bottom tab bar (Slides, Insert, Text,
-  Shape, Edit, More). A tab opens a sheet of large labelled tiles above the bar, so the slide stays
-  in view and editable: slide layouts and order, shapes, tables, charts and media, text formatting
+- A phone layout for windows narrower than 600 pt or shorter than 500 pt: an app bar (File, the
+  presentation name, Undo, Redo, Save, Play from start), a row of slide chips, and a bottom tab bar
+  (Slides, Insert, Text, Shape, Edit, More). A tab opens a sheet of large labelled tiles in sections
+  above the bar, with a title and Close, so the slide stays in view and editable: slide layouts and order, shapes, tables, charts and media, text formatting
   with colour swatches, arrange and alignment, cut, copy and paste, view, panes and Play. Every
-  tile runs the same command as the desktop ribbon. In a slide show, tap goes forward, swipe left
+  tile runs the same command as the desktop ribbon. More ▸ All tools opens every ribbon tab and command of the
+  engine (about 290), with pickers for themes, transitions, animations, shapes and the like, forms for typed values,
+  and a search; More also starts with Search. A List style (Preferences on a phone) replaces the tab
+  bar with a floating quick bar and shows the same commands as rows, with a tab menu. While text is
+  edited, a keyboard bar (formats, lists, indents, sizes, Done) takes the bottom. The theme is
+  Light, Dark or System, and the settings last after a restart. In a slide show, tap goes forward, swipe left
   or right turns the page, a bar of 48 pt buttons (Back, Next, Pen, Laser, Blank, All, End) shows
   after a touch, and Back ends the show.
 - Opening presentations through the system file picker (.pptx, .ppsx, .potx, .deckcraft), and

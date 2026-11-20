@@ -82,7 +82,7 @@ fn run(app: &mut SlideApp, id: &str, p: Value) {
 }
 
 /// Which contextual tabs apply to the selection.
-fn contextual(app: &SlideApp) -> Vec<&'static str> {
+pub(crate) fn contextual(app: &SlideApp) -> Vec<&'static str> {
     let mut v = vec![];
     let Some(st) = app.session.active() else { return v };
     if st.selection.target == Target::Handout {

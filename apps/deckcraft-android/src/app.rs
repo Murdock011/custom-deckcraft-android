@@ -54,6 +54,22 @@ pub struct Shell {
     locs: HashMap<u64, String>,
     /// Locations of the presentations queued for opening this frame (see `adopt_opened`).
     opening: Vec<String>,
+    /// The settings as last written to disk, and frames since they were compared.
+    saved_settings: Vec<u8>,
+    settings_frames: u32,
+}
+
+/// How often (in frames) the settings are compared with what is on disk.
+const SETTINGS_FRAMES: u32 = 60;
+
+/// Where the settings (`ui.json`, `prefs.json`) live: `settings` in the app's data folder.
+fn settings_dir() -> Option<std::path::PathBuf> {
+    files::DIR.get().map(|d| d.join("settings"))
+}
+
+/// The settings as bytes, to tell whether they changed.
+fn settings_bytes(app: &SlideApp) -> Vec<u8> {
+    serde_json::to_vec(&(&app.ui, &app.session.prefs)).unwrap_or_default()
 }
 
 impl Shell {
@@ -69,6 +85,17 @@ impl Shell {
             ..Default::default()
         };
         let mut app = SlideApp::new(Session::new(), services);
+        // The saved settings: the theme (Light by default), the phone layout, the editing preferences.
+        if let Some(dir) = settings_dir() {
+            let (ui, prefs) = deckcraft_ui_egui::settings::load(&dir);
+            if let Some(ui) = ui {
+                app.ui = ui;
+            }
+            if let Some(prefs) = prefs {
+                app.session.prefs = prefs;
+            }
+        }
+        let saved_settings = settings_bytes(&app);
         // AutoRecover, as on the desktop: reopen what a previous run left unsaved.
         if let Some(dir) = files::recovery_dir() {
             app.session.recovery_dir = Some(dir);
@@ -87,6 +114,8 @@ impl Shell {
             seen: Vec::new(),
             locs: HashMap::new(),
             opening: Vec::new(),
+            saved_settings,
+            settings_frames: 0,
         }
     }
 
@@ -190,6 +219,17 @@ impl eframe::App for Shell {
         // Inbox files open inside `logic`: the presentation that became active lives where it was picked.
         let before = active.map(|a| a.0);
         self.app.logic(ctx);
+        self.settings_frames += 1;
+        if self.settings_frames >= SETTINGS_FRAMES {
+            self.settings_frames = 0;
+            let now = settings_bytes(&self.app);
+            if now != self.saved_settings
+                && let Some(dir) = settings_dir()
+            {
+                deckcraft_ui_egui::settings::save(&dir, &self.app.ui, &self.app.session.prefs);
+                self.saved_settings = now;
+            }
+        }
         let opened = std::mem::take(&mut self.opening);
         if self.app.session.active().map(|d| d.uid) != before
             && let Some(loc) = opened.last().cloned()

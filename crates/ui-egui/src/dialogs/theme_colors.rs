@@ -18,7 +18,7 @@ fn seed_theme_colors(d: &mut Dialog) {
 fn theme_color_row(ui: &mut Ui, d: &mut Dialog, slot: SchemeSlot) {
     let key = slot.xml_name();
     let mut v = d.get(key, "000000");
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.add_sized(vec2(188.0, 18.0), egui::Label::new(slot.label()));
         let fill = deckcraft_color::Rgba::from_hex(&v).map(theme::to_color32).unwrap_or_else(|| Color32::from_gray(200));
         let (rect, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
@@ -60,18 +60,25 @@ pub(super) fn theme_colors_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialo
     ui.style_mut().spacing.button_padding.y = 2.0;
     let left = [SchemeSlot::Dk1, SchemeSlot::Lt1, SchemeSlot::Dk2, SchemeSlot::Lt2, SchemeSlot::Hlink, SchemeSlot::FolHlink];
     let right = [SchemeSlot::Accent1, SchemeSlot::Accent2, SchemeSlot::Accent3, SchemeSlot::Accent4, SchemeSlot::Accent5, SchemeSlot::Accent6];
-    egui::Grid::new("theme-colors").spacing(vec2(18.0, 4.0)).show(ui, |ui| {
-        for (a, b) in left.into_iter().zip(right) {
-            theme_color_row(ui, d, a);
-            theme_color_row(ui, d, b);
-            ui.end_row();
+    // A phone: one column of rows; the desktop's two columns do not fit.
+    if crate::phone::active(ui.ctx()) {
+        for slot in left.into_iter().chain(right) {
+            theme_color_row(ui, d, slot);
         }
-    });
+    } else {
+        egui::Grid::new("theme-colors").spacing(vec2(18.0, 4.0)).show(ui, |ui| {
+            for (a, b) in left.into_iter().zip(right) {
+                theme_color_row(ui, d, a);
+                theme_color_row(ui, d, b);
+                ui.end_row();
+            }
+        });
+    }
     ui.add_space(6.0);
     let mut name = d.get("schemeName", "");
-    ui.horizontal(|ui| {
+    super::row(ui, |ui| {
         ui.label("Name:");
-        let resp = ui.add(egui::TextEdit::singleline(&mut name).desired_width(280.0).id_salt("schemeName"));
+        let resp = ui.add(egui::TextEdit::singleline(&mut name).desired_width(super::width(ui, 280.0)).id_salt("schemeName"));
         let shown = name.clone();
         resp.widget_info(move || {
             let mut info = egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Scheme name");
