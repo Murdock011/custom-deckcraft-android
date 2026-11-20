@@ -31,6 +31,10 @@ pub fn about(_app: &mut SlideApp, ui: &mut Ui) {
         ui.hyperlink_to("Source on GitHub", deckcraft_engine::links::GITHUB);
         ui.add_space(6.0);
         ui.label(egui::RichText::new("MIT OR Apache-2.0 · © 2026 ArtCraft Team and the DeckCraft contributors").size(11.0).color(t.text_faint));
+        // This fork: the Android version, made on top of the ArtCraft team's DeckCraft.
+        ui.add_space(6.0);
+        ui.label("Android version by Murdock011, a modification of DeckCraft. DeckCraft itself is the work of the ArtCraft team.");
+        ui.hyperlink_to("Android source: github.com/Murdock011/custom-deckcraft-android", "https://github.com/Murdock011/custom-deckcraft-android");
     });
 }
 
